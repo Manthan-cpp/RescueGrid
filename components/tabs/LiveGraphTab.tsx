@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
   Layers,
   ZoomIn,
@@ -14,10 +14,7 @@ import {
   MapPin,
   X,
   Filter,
-  Shield,
-  Truck,
-  Activity,
-  Flame,
+  Move,
 } from "lucide-react";
 import { GraphData, GraphNode } from "@/lib/types";
 
@@ -32,6 +29,13 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
+  // Node Drag & Canvas Pan State
+  const [customPositions, setCustomPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
+  const [isPanning, setIsPanning] = useState(false);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const svgRef = useRef<SVGSVGElement | null>(null);
+
   // Deterministic 2D Orbital Layout across 850x550 canvas
   const layoutNodes = useMemo(() => {
     const width = 850;
@@ -42,6 +46,15 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
     const nodes = graphData.nodes;
 
     return nodes.map((node) => {
+      // If user manually moved this node, preserve its custom coordinates
+      if (customPositions[node.id]) {
+        return {
+          ...node,
+          x: customPositions[node.id].x,
+          y: customPositions[node.id].y,
+        };
+      }
+
       // 1. Center Command Hub (CrisisRoom)
       if (node.type === "CrisisRoom") {
         return { ...node, x: centerX, y: centerY };
@@ -52,7 +65,6 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
         const wards = nodes.filter((n) => n.type === "Location");
         const wardIndex = wards.indexOf(node);
         const count = wards.length || 1;
-        // Distribute nicely with angular tilt
         const angle = (wardIndex / count) * 2 * Math.PI - Math.PI / 4;
         const radius = 160;
         return {
@@ -116,7 +128,7 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
         y: centerY + radius * Math.sin(angle),
       };
     });
-  }, [graphData]);
+  }, [graphData, customPositions]);
 
   const filteredNodes = useMemo(() => {
     if (filterType === "all") return layoutNodes;
@@ -136,6 +148,45 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
   const formatLabel = (label: string, maxLen = 22) => {
     if (!label) return "";
     return label.length > maxLen ? `${label.slice(0, maxLen)}...` : label;
+  };
+
+  // -------------------------------------------------------------
+  // Pan & Zoom Event Handlers (Canvas and Node Dragging)
+  // -------------------------------------------------------------
+  const handleWheel = (e: React.WheelEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    const zoomDelta = e.deltaY < 0 ? 0.08 : -0.08;
+    setZoomLevel((prev) => Math.min(Math.max(Number((prev + zoomDelta).toFixed(2)), 0.4), 3.0));
+  };
+
+  const handleCanvasMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+    // Only pan if clicking empty space, not a node
+    if ((e.target as HTMLElement).tagName === "svg" || (e.target as HTMLElement).tagName === "rect") {
+      setIsPanning(true);
+      setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (draggingNodeId && svgRef.current) {
+      const rect = svgRef.current.getBoundingClientRect();
+      const mouseX = (e.clientX - rect.left - pan.x) / zoomLevel;
+      const mouseY = (e.clientY - rect.top - pan.y) / zoomLevel;
+      setCustomPositions((prev) => ({
+        ...prev,
+        [draggingNodeId]: { x: Math.round(mouseX), y: Math.round(mouseY) },
+      }));
+    } else if (isPanning) {
+      setPan({
+        x: e.clientX - dragStart.x,
+        y: e.clientY - dragStart.y,
+      });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsPanning(false);
+    setDraggingNodeId(null);
   };
 
   return (
@@ -201,19 +252,22 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
           ))}
         </div>
 
-        {/* Zoom Controls */}
+        {/* Zoom & Navigation Controls */}
         <div className="flex items-center space-x-1">
+          <span className="text-xs font-mono text-gray-400 mr-1 hidden sm:inline">
+            {Math.round(zoomLevel * 100)}%
+          </span>
           <button
-            onClick={() => setZoomLevel((z) => Math.min(z + 0.15, 2))}
+            onClick={() => setZoomLevel((z) => Math.min(Number((z + 0.15).toFixed(2)), 3.0))}
             className="p-1.5 text-gray-600 hover:text-gray-950 border border-gray-200 rounded hover:bg-gray-50 transition-colors"
-            title="Zoom In"
+            title="Zoom In (Scroll up)"
           >
             <ZoomIn className="w-4 h-4" />
           </button>
           <button
-            onClick={() => setZoomLevel((z) => Math.max(z - 0.15, 0.6))}
+            onClick={() => setZoomLevel((z) => Math.max(Number((z - 0.15).toFixed(2)), 0.4))}
             className="p-1.5 text-gray-600 hover:text-gray-950 border border-gray-200 rounded hover:bg-gray-50 transition-colors"
-            title="Zoom Out"
+            title="Zoom Out (Scroll down)"
           >
             <ZoomOut className="w-4 h-4" />
           </button>
@@ -221,9 +275,10 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
             onClick={() => {
               setZoomLevel(1);
               setPan({ x: 0, y: 0 });
+              setCustomPositions({});
             }}
             className="p-1.5 text-gray-600 hover:text-gray-950 border border-gray-200 rounded hover:bg-gray-50 transition-colors"
-            title="Reset View"
+            title="Reset Pan, Zoom & Positions"
           >
             <RotateCcw className="w-4 h-4" />
           </button>
@@ -232,20 +287,25 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
 
       {/* Main Canvas & Inspection Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-        {/* Redesigned Contrast Zone Graph Canvas */}
+        {/* Interactive Canvas */}
         <div className="lg:col-span-3 bg-[#080C14] rounded-lg border border-gray-800 shadow-2xl overflow-hidden relative min-h-[580px] flex items-center justify-center">
           {/* Top Engine Badge */}
-          <div className="absolute top-3 left-3 z-10 flex items-center space-x-2 text-[11px] font-mono text-gray-300 bg-gray-900/95 px-3 py-1 rounded-md border border-gray-700 shadow-sm backdrop-blur-sm">
+          <div className="absolute top-3 left-3 z-10 flex items-center space-x-2 text-[11px] font-mono text-gray-300 bg-gray-900/95 px-3 py-1 rounded-md border border-gray-700 shadow-sm backdrop-blur-sm pointer-events-none">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>FalkorDB Traversal Engine · Live Active Graph</span>
+            <span>FalkorDB Traversal Engine · Drag nodes / Scroll to zoom</span>
           </div>
 
           <svg
-            className="w-full h-[580px] select-none"
+            ref={svgRef}
+            className={`w-full h-[580px] select-none ${isPanning ? "cursor-grabbing" : "cursor-grab"}`}
             viewBox="0 0 850 550"
+            onWheel={handleWheel}
+            onMouseDown={handleCanvasMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
           >
             <defs>
-              {/* Subtle Tech Dot Grid Pattern */}
               <pattern
                 id="graph-grid"
                 width="36"
@@ -255,7 +315,6 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
                 <circle cx="18" cy="18" r="1" fill="#1E293B" opacity="0.7" />
               </pattern>
 
-              {/* Node Glow Filters */}
               <filter id="glow-cyan" x="-20%" y="-20%" width="140%" height="140%">
                 <feGaussianBlur stdDeviation="3" result="blur" />
                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
@@ -269,7 +328,6 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
               </filter>
 
-              {/* Arrow Marker for Directed Edges */}
               <marker
                 id="arrow-cyan"
                 viewBox="0 0 10 10"
@@ -294,7 +352,7 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
               </marker>
             </defs>
 
-            {/* Background Dot Grid */}
+            {/* Background Grid (Clicking here pans the canvas) */}
             <rect width="850" height="550" fill="url(#graph-grid)" />
 
             <g
@@ -324,7 +382,7 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
                 const pathData = `M ${source.x} ${source.y} L ${target.x} ${target.y}`;
 
                 return (
-                  <g key={edge.id}>
+                  <g key={edge.id} pointerEvents="none">
                     {/* Background Trace Line */}
                     <path
                       d={pathData}
@@ -368,7 +426,6 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
                         fontFamily="monospace"
                         fontWeight="600"
                         letterSpacing="0.05em"
-                        pointerEvents="none"
                       >
                         {edge.label}
                       </text>
@@ -377,21 +434,29 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
                 );
               })}
 
-              {/* Graph Nodes */}
+              {/* Draggable & Inspectable Graph Nodes */}
               {filteredNodes.map((node) => {
                 const isSelected = selectedNode?.id === node.id;
                 const isHovered = hoveredNode?.id === node.id;
+                const isDraggingThis = draggingNodeId === node.id;
 
                 return (
                   <g
                     key={node.id}
                     transform={`translate(${node.x}, ${node.y})`}
-                    onClick={() => setSelectedNode(node)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedNode(node);
+                    }}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      setDraggingNodeId(node.id);
+                    }}
                     onMouseEnter={() => setHoveredNode(node)}
                     onMouseLeave={() => setHoveredNode(null)}
-                    className="cursor-pointer"
+                    className="cursor-move"
                   >
-                    {/* Rock-Solid Transparent Hit Target (Completely prevents hover flickering!) */}
+                    {/* Hit Target (Prevents flickering, enables direct drag) */}
                     <circle r="36" fill="transparent" pointerEvents="all" />
 
                     {/* Selection Active Ring */}
@@ -408,9 +473,19 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
                       />
                     )}
 
+                    {/* Drag Active Glow Ring */}
+                    {isDraggingThis && (
+                      <circle
+                        r="30"
+                        fill="none"
+                        stroke="#38BDF8"
+                        strokeWidth="2"
+                        pointerEvents="none"
+                      />
+                    )}
+
                     {/* Node Visual Shape by Type */}
                     {node.type === "CrisisRoom" ? (
-                      /* 1. Command Hub: Large Hex/Octagon Card */
                       <g pointerEvents="none" filter="url(#glow-purple)">
                         <circle
                           r="25"
@@ -420,14 +495,12 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
                           className="transition-colors"
                         />
                         <circle r="19" fill="#3730A3" />
-                        {/* Command Core Icon */}
                         <path
                           d="M -3 -8 L 4 0 L -1 0 L 2 8 L -4 0 L 0 0 Z"
                           fill="#FFFFFF"
                         />
                       </g>
                     ) : node.type === "Location" ? (
-                      /* 2. Ward Location: Shielded Sector Pod */
                       <g pointerEvents="none">
                         <circle
                           r="20"
@@ -444,7 +517,6 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
                           strokeWidth={isHovered ? "2.5" : "1.8"}
                           className="transition-colors"
                         />
-                        {/* Map Pin Icon Vector */}
                         <path
                           d="M 0 -8 C -4 -8 -6 -5 -6 -2 C -6 3 0 8 0 8 C 0 8 6 3 6 -2 C 6 -5 4 -8 0 -8 Z"
                           fill={
@@ -458,7 +530,6 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
                         <circle cx="0" cy="-3" r="2" fill="#0F172A" />
                       </g>
                     ) : node.type === "SOSRequest" ? (
-                      /* 3. Emergency SOS: Vibrant Alert Beacon */
                       <g
                         pointerEvents="none"
                         filter={
@@ -478,7 +549,6 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
                           strokeWidth="2"
                           className="transition-colors"
                         />
-                        {/* Alert Flame / Siren Vector */}
                         <path
                           d="M -6 6 L 6 6 L 0 -6 Z"
                           fill="#FFFFFF"
@@ -496,7 +566,6 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
                         <circle cx="0" cy="4" r="0.8" fill="#DC2626" />
                       </g>
                     ) : node.type === "Resource" ? (
-                      /* 4. Resource: High-Tech Asset Pod */
                       <g pointerEvents="none" filter="url(#glow-cyan)">
                         <rect
                           x="-18"
@@ -509,7 +578,6 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
                           strokeWidth="2"
                           className="transition-colors"
                         />
-                        {/* LifeBuoy / Raft Vector */}
                         <circle
                           cx="0"
                           cy="0"
@@ -524,7 +592,6 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
                         <line x1="0" y1="3" x2="0" y2="8" stroke="#FFFFFF" strokeWidth="2" />
                       </g>
                     ) : node.type === "Shelter" ? (
-                      /* 5. Shelter: Relief Sanctuary Cross */
                       <g pointerEvents="none">
                         <rect
                           x="-18"
@@ -537,12 +604,10 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
                           strokeWidth="2"
                           className="transition-colors"
                         />
-                        {/* Medical Cross Vector */}
                         <rect x="-3" y="-8" width="6" height="16" rx="1" fill="#FFFFFF" />
                         <rect x="-8" y="-3" width="16" height="6" rx="1" fill="#FFFFFF" />
                       </g>
                     ) : (
-                      /* 6. Agency: Official Government/NGO Shield */
                       <g pointerEvents="none">
                         <polygon
                           points="0,-18 16,-10 12,14 0,20 -12,14 -16,-10"
@@ -558,7 +623,7 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
                       </g>
                     )}
 
-                    {/* Node Text Label (Cleanly formatted & truncated) */}
+                    {/* Node Text Label */}
                     <g pointerEvents="none" transform="translate(0, 30)">
                       <rect
                         x="-65"
@@ -588,8 +653,8 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
             </g>
           </svg>
 
-          {/* Redesigned Legend Bottom Bar */}
-          <div className="absolute bottom-3 left-3 right-3 z-10 flex flex-wrap items-center justify-between text-[11px] font-mono text-gray-300 bg-gray-900/95 px-4 py-2 rounded-md border border-gray-800 shadow-md backdrop-blur-sm">
+          {/* Legend Bottom Bar */}
+          <div className="absolute bottom-3 left-3 right-3 z-10 flex flex-wrap items-center justify-between text-[11px] font-mono text-gray-300 bg-gray-900/95 px-4 py-2 rounded-md border border-gray-800 shadow-md backdrop-blur-sm pointer-events-none">
             <div className="flex items-center space-x-4">
               <span className="flex items-center space-x-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm" />
@@ -613,7 +678,7 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
               </span>
             </div>
             <span className="text-gray-400 hidden sm:inline">
-              Click any node to inspect live Cypher properties
+              🖱️ Drag any node to rearrange · Drag canvas to pan · Scroll to zoom
             </span>
           </div>
         </div>
