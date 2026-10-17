@@ -110,13 +110,13 @@ export default function Home() {
   }, [currentRoom, fetchRoomDetails]);
 
   // Handle Room Creation
-  const handleCreateRoom = async (roomData: CrisisRoom) => {
+  const handleCreateRoom = async (roomData: CrisisRoom, zones?: string) => {
     try {
       setIsLoading(true);
       const res = await fetch("/api/rooms", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: roomData.name, location: roomData.location }),
+        body: JSON.stringify({ name: roomData.name, location: roomData.location, zones }),
       });
       const data = await res.json();
       if (data.success && data.room) {

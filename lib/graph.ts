@@ -78,7 +78,7 @@ export async function setupSchemaIndices() {
 // -------------------------------------------------------------
 // 2. Crisis Room Lifecycle & Infrastructure Seeding (DATA.md)
 // -------------------------------------------------------------
-export async function createCrisisRoom(room: CrisisRoom): Promise<void> {
+export async function createCrisisRoom(room: CrisisRoom, shouldSeed = false): Promise<void> {
   const graph = await getGraph();
   await setupSchemaIndices();
 
@@ -94,7 +94,11 @@ export async function createCrisisRoom(room: CrisisRoom): Promise<void> {
   `;
 
   await graph.query(cypher, { params: { ...room } as Record<string, any> });
-  await seedInfrastructure(room.id, room.location);
+
+  // Only seed infrastructure if explicitly requested
+  if (shouldSeed) {
+    await seedInfrastructure(room.id, room.location);
+  }
 }
 
 export async function seedInfrastructure(roomId: string, region: string): Promise<void> {
@@ -236,10 +240,11 @@ export async function seedInfrastructure(roomId: string, region: string): Promis
 // -------------------------------------------------------------
 // 3. SOS Request Creation & Dispatch Updates
 // -------------------------------------------------------------
-export async function createSOS(sos: SOSRequest): Promise<void> {
+export async function createSOS(sos: SOSRequest, roomId?: string): Promise<void> {
   const graph = await getGraph();
   const cypher = `
-    MATCH (loc:Location { id: $location_id })
+    MERGE (loc:Location { id: $location_id })
+    ON CREATE SET loc.name = $location_name, loc.accessibility_status = 'accessible'
     MERGE (s:SOSRequest { id: $id })
     ON CREATE SET
       s.description = $description,
@@ -251,7 +256,47 @@ export async function createSOS(sos: SOSRequest): Promise<void> {
     RETURN s
   `;
 
-  await graph.query(cypher, { params: sos as any });
+  await graph.query(cypher, { params: { ...sos, location_name: sos.location_name || sos.location_id } as any });
+
+  if (roomId) {
+    await graph.query(
+      `MATCH (cr:CrisisRoom { id: $roomId }), (loc:Location { id: $location_id })
+       MERGE (cr)-[:HAS_ZONE]->(loc)`,
+      { params: { roomId, location_id: sos.location_id } }
+    );
+  }
+}
+
+export async function addResource(res: Resource, roomId?: string): Promise<void> {
+  const graph = await getGraph();
+  const cypher = `
+    MERGE (loc:Location { id: $location_id })
+    ON CREATE SET loc.name = $location_name, loc.accessibility_status = 'accessible'
+    MERGE (r:Resource { id: $id })
+    ON CREATE SET
+      r.name = $name,
+      r.type = $type,
+      r.status = $status,
+      r.capacity = $capacity
+    MERGE (r)-[:LOCATED_IN]->(loc)
+    RETURN r
+  `;
+
+  await graph.query(cypher, {
+    params: {
+      ...res,
+      location_name: res.location_name || res.location_id,
+      capacity: Number(res.capacity) || 1,
+    } as any,
+  });
+
+  if (roomId) {
+    await graph.query(
+      `MATCH (cr:CrisisRoom { id: $roomId }), (loc:Location { id: $location_id })
+       MERGE (cr)-[:HAS_ZONE]->(loc)`,
+      { params: { roomId, location_id: res.location_id } }
+    );
+  }
 }
 
 export async function assignResourceToSOS(

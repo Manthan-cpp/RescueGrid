@@ -7,7 +7,7 @@ import { CrisisRoom } from "@/lib/types";
 interface CreateRoomModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (room: CrisisRoom) => void;
+  onCreate: (room: CrisisRoom, zones?: string) => void;
 }
 
 export function CreateRoomModal({ isOpen, onClose, onCreate }: CreateRoomModalProps) {
@@ -29,7 +29,7 @@ export function CreateRoomModal({ isOpen, onClose, onCreate }: CreateRoomModalPr
       status: "active",
     };
 
-    onCreate(newRoom);
+    onCreate(newRoom, zones.trim());
     setName("");
     setLocation("");
     onClose();

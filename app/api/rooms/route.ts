@@ -36,7 +36,25 @@ export async function POST(req: Request) {
       status: "active",
     };
 
-    await createCrisisRoom(newRoom);
+    await createCrisisRoom(newRoom, false);
+
+    // If user provided initial operational zones, create only those clean location nodes
+    const { zones } = body;
+    if (zones && typeof zones === "string" && zones.trim()) {
+      const graph = await (await import("@/lib/graph")).getGraph();
+      const zoneNames = zones.split(",").map((z: string) => z.trim()).filter(Boolean);
+      for (let i = 0; i < zoneNames.length; i++) {
+        const zoneName = zoneNames[i];
+        const locId = `${roomId}-z${i + 1}`;
+        await graph.query(
+          `MATCH (room:CrisisRoom { id: $roomId })
+           MERGE (loc:Location { id: $locId })
+           ON CREATE SET loc.name = $name, loc.region = $region, loc.accessibility_status = 'accessible'
+           MERGE (room)-[:HAS_ZONE]->(loc)`,
+          { params: { roomId, locId, name: zoneName, region: newRoom.location } }
+        );
+      }
+    }
 
     return NextResponse.json({ success: true, room: newRoom }, { status: 201 });
   } catch (error: any) {

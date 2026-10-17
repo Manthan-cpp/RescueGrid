@@ -19,7 +19,8 @@ export function NewSOSModal({
 }: NewSOSModalProps) {
   const [description, setDescription] = useState("");
   const [urgency, setUrgency] = useState<SOSUrgency>("high");
-  const [locationId, setLocationId] = useState(wards[0]?.id || "");
+  const [locationId, setLocationId] = useState(wards[0]?.id || "custom");
+  const [customLocation, setCustomLocation] = useState("");
   const [peopleCount, setPeopleCount] = useState(2);
 
   if (!isOpen) return null;
@@ -28,18 +29,29 @@ export function NewSOSModal({
     e.preventDefault();
     if (!description.trim()) return;
 
-    const selectedWard = wards.find((w) => w.id === locationId);
+    const isCustom = wards.length === 0 || locationId === "custom";
+    let finalLocId = locationId;
+    let finalLocName = "Target Ward";
+
+    if (isCustom) {
+      finalLocName = customLocation.trim() || "Sector 1";
+      finalLocId = `loc-${finalLocName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+    } else {
+      const selectedWard = wards.find((w) => w.id === locationId);
+      finalLocName = selectedWard?.name || locationId;
+    }
 
     onSubmit({
       description: description.trim(),
       urgency,
-      location_id: locationId,
-      location_name: selectedWard?.name || "Target Ward",
+      location_id: finalLocId,
+      location_name: finalLocName,
       people_count: Number(peopleCount),
       status: "open",
     });
 
     setDescription("");
+    setCustomLocation("");
     onClose();
   };
 
@@ -117,23 +129,50 @@ export function NewSOSModal({
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">
-              Location / Ward *
-            </label>
-            <div className="relative">
-              <MapPin className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
-              <select
-                value={locationId}
-                onChange={(e) => setLocationId(e.target.value)}
-                className="w-full text-sm pl-9 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-900 focus:border-gray-900 text-gray-900"
-              >
-                {wards.map((ward) => (
-                  <option key={ward.id} value={ward.id}>
-                    {ward.name} ({ward.accessibility_status})
-                  </option>
-                ))}
-              </select>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-semibold text-gray-700">
+                Location / Sector *
+              </label>
+              {wards.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setLocationId(locationId === "custom" ? (wards[0]?.id || "") : "custom")}
+                  className="text-[11px] text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  {locationId === "custom" ? "Choose existing ward" : "+ Type custom sector"}
+                </button>
+              )}
             </div>
+
+            {wards.length > 0 && locationId !== "custom" ? (
+              <div className="relative">
+                <MapPin className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+                <select
+                  value={locationId}
+                  onChange={(e) => setLocationId(e.target.value)}
+                  className="w-full text-sm pl-9 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-900 focus:border-gray-900 text-gray-900"
+                >
+                  {wards.map((ward) => (
+                    <option key={ward.id} value={ward.id}>
+                      {ward.name} ({ward.accessibility_status})
+                    </option>
+                  ))}
+                  <option value="custom">+ Enter New / Custom Location...</option>
+                </select>
+              </div>
+            ) : (
+              <div className="relative">
+                <MapPin className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g., Sector 4 North, River Crossing, Ward 12"
+                  value={customLocation}
+                  onChange={(e) => setCustomLocation(e.target.value)}
+                  className="w-full text-sm pl-9 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-600 focus:border-red-600 text-gray-900"
+                />
+              </div>
+            )}
           </div>
 
           <div className="pt-2 border-t border-gray-100 flex items-center justify-between">

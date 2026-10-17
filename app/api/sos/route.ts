@@ -28,7 +28,7 @@ export async function POST(req: Request) {
     };
 
     // 1. Create SOS node in FalkorDB
-    await createSOS(newSOS);
+    await createSOS(newSOS, roomId);
 
     // 2. Trigger Dispatch Agent (Gemini Flash judgment & graph writeback)
     const dispatchResult = await runDispatchAgent(newSOS, roomId || "default");
