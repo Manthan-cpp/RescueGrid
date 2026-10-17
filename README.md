@@ -34,6 +34,6 @@ Update this section as phases complete:
 - [x] Phase 3 — Crisis Room + Live Data Ingestion
 - [x] Phase 4 — Dispatch Agent
 - [x] Phase 5 — Query Agent (Company Brain)
-- [ ] Phase 6 — Memory & Multi-Agent Coordination
-- [ ] Phase 7 — Live Graph Visualization + Real-time Sync
-- [ ] Phase 8 — Demo Polish & Simulation Script
+- [x] Phase 6 — Memory & Multi-Agent Coordination
+- [x] Phase 7 — Live Graph Visualization + Real-time Sync
+- [x] Phase 8 — Demo Polish & Simulation Script

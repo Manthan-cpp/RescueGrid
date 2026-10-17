@@ -235,6 +235,48 @@ export default function Home() {
     }
   };
 
+  // Handle Live Crisis Simulation
+  const [isSimulating, setIsSimulating] = useState(false);
+  const handleRunSimulation = async () => {
+    setIsSimulating(true);
+    try {
+      const res = await fetch("/api/simulate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomId: currentRoom?.id }),
+      });
+      const data = await res.json();
+      if (data.success && data.simulatedEvents) {
+        // Append all new simulation logs
+        const newLogs: AgentLogEntry[] = data.simulatedEvents.map((ev: any) => ({
+          id: `log-${Date.now()}-${ev.sos.id}`,
+          timestamp: ev.sos.timestamp,
+          agent: "Dispatch Agent",
+          action: ev.dispatch.assigned
+            ? `Assigned ${ev.dispatch.resourceName} to ${ev.sos.id}`
+            : `Queued ${ev.sos.id} (Deficit Alert)`,
+          reasoning: ev.dispatch.reasoning,
+          model_used: ev.dispatch.modelUsed,
+          status: ev.dispatch.status,
+          sos_id: ev.sos.id,
+          resource_id: ev.dispatch.resourceId,
+        }));
+        setAgentLogs((prev) => [...newLogs, ...prev]);
+
+        // Refresh room details if room is currently selected
+        if (currentRoom) {
+          await fetchRoomDetails(currentRoom.id);
+        } else {
+          await fetchRooms();
+        }
+      }
+    } catch (err) {
+      console.error("Simulation failed:", err);
+    } finally {
+      setIsSimulating(false);
+    }
+  };
+
   // Top level error banner if FalkorDB connection fails
   if (errorMessage && rooms.length === 0 && !isLoading) {
     return (
@@ -344,12 +386,22 @@ export default function Home() {
               <p className="text-xs text-gray-500 max-w-sm mx-auto mt-1 mb-4">
                 FalkorDB currently has zero crisis rooms. Initialize the first crisis zone to seed initial wards and emergency infrastructure.
               </p>
-              <button
-                onClick={() => setIsCreateModalOpen(true)}
-                className="px-4 py-2 bg-red-600 text-white rounded text-xs font-semibold hover:bg-red-700 shadow-sm"
-              >
-                + Initialize First Crisis Room
-              </button>
+              <div className="flex items-center justify-center space-x-3">
+                <button
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="px-4 py-2 bg-red-600 text-white rounded text-xs font-semibold hover:bg-red-700 shadow-sm"
+                >
+                  + Create Crisis Room
+                </button>
+                <button
+                  onClick={handleRunSimulation}
+                  disabled={isSimulating}
+                  className="px-4 py-2 bg-purple-700 text-white rounded text-xs font-semibold hover:bg-purple-800 shadow-sm flex items-center"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 mr-1.5 ${isSimulating ? "animate-spin" : ""}`} />
+                  {isSimulating ? "Simulating..." : "⚡ Quick Demo Simulation"}
+                </button>
+              </div>
             </div>
           )}
         </main>
@@ -412,6 +464,15 @@ export default function Home() {
               title="Refresh Graph State"
             >
               <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
+            </button>
+            <button
+              onClick={handleRunSimulation}
+              disabled={isSimulating}
+              className="inline-flex items-center px-3.5 py-2 text-xs font-semibold rounded-md bg-purple-700 text-white hover:bg-purple-800 disabled:opacity-50 transition-colors shadow-sm"
+              title="Inject realistic multi-day crisis incidents to demonstrate autonomous dispatch & graph memory"
+            >
+              <Sparkles className={`w-3.5 h-3.5 mr-1.5 ${isSimulating ? "animate-spin" : ""}`} />
+              {isSimulating ? "Simulating..." : "Run Crisis Simulation"}
             </button>
             <button
               onClick={() => setIsSOSModalOpen(true)}
