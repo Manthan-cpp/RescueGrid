@@ -43,12 +43,12 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
         return { ...node, x: centerX, y: centerY };
       }
 
-      // Wards in inner orbit
+      // Wards in inner orbit with rotational offset
       if (node.type === "Location") {
         const wardIndex = nodes.filter(n => n.type === "Location").indexOf(node);
         const wardCount = nodes.filter(n => n.type === "Location").length;
-        const angle = (wardIndex / (wardCount || 1)) * 2 * Math.PI;
-        const radius = 160;
+        const angle = (wardIndex / (wardCount || 1)) * 2 * Math.PI - Math.PI / 3;
+        const radius = 145;
         return {
           ...node,
           x: centerX + radius * Math.cos(angle),
@@ -56,9 +56,46 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
         };
       }
 
-      // SOS, Resources, Shelters in outer orbit connected to wards
-      const angle = (index / total) * 2 * Math.PI;
-      const radius = 260 + (index % 3) * 35;
+      // Shelters
+      if (node.type === "Shelter") {
+        const shIndex = nodes.filter(n => n.type === "Shelter").indexOf(node);
+        const angle = (shIndex * 1.5) + Math.PI / 4;
+        const radius = 210;
+        return {
+          ...node,
+          x: centerX + radius * Math.cos(angle),
+          y: centerY + radius * Math.sin(angle),
+        };
+      }
+
+      // Resources
+      if (node.type === "Resource") {
+        const resIndex = nodes.filter(n => n.type === "Resource").indexOf(node);
+        const angle = (resIndex * 1.4) + Math.PI * 0.75;
+        const radius = 220;
+        return {
+          ...node,
+          x: centerX + radius * Math.cos(angle),
+          y: centerY + radius * Math.sin(angle),
+        };
+      }
+
+      // Agencies
+      if (node.type === "Agency") {
+        const agIndex = nodes.filter(n => n.type === "Agency").indexOf(node);
+        const angle = (agIndex * 1.8) - Math.PI * 0.8;
+        const radius = 240;
+        return {
+          ...node,
+          x: centerX + radius * Math.cos(angle),
+          y: centerY + radius * Math.sin(angle),
+        };
+      }
+
+      // SOS Requests in outer perimeter
+      const sosIndex = nodes.filter(n => n.type === "SOSRequest").indexOf(node);
+      const angle = (sosIndex * 1.2) - Math.PI / 2;
+      const radius = 270;
       return {
         ...node,
         x: centerX + radius * Math.cos(angle),

@@ -298,23 +298,26 @@ export async function getCrisisRooms(): Promise<CrisisRoom[]> {
 export async function getFullGraphData(roomId?: string): Promise<GraphData> {
   const graph = await getGraph();
   
-  const nodeQuery = roomId
-    ? `MATCH (r:CrisisRoom { id: $roomId })-[:HAS_ZONE*0..2]->(n) RETURN DISTINCT n, labels(n)[0] as labelType`
-    : `MATCH (n) RETURN DISTINCT n, labels(n)[0] as labelType`;
+  // Return all nodes and edges in the crisis perimeter
+  const nodeQuery = `
+    MATCH (n)
+    RETURN DISTINCT n, labels(n)[0] as labelType
+  `;
 
-  const edgeQuery = roomId
-    ? `MATCH (r:CrisisRoom { id: $roomId })-[:HAS_ZONE*0..2]->(a)-[rel]->(b) RETURN rel, startNode(rel).id as source, endNode(rel).id as target, type(rel) as relType`
-    : `MATCH (a)-[rel]->(b) RETURN rel, startNode(rel).id as source, endNode(rel).id as target, type(rel) as relType`;
+  const edgeQuery = `
+    MATCH (a)-[rel]->(b)
+    RETURN rel, a.id as source, b.id as target, type(rel) as relType
+  `;
 
-  const nodeRes = await graph.query(nodeQuery, roomId ? { params: { roomId } } : undefined);
-  const edgeRes = await graph.query(edgeQuery, roomId ? { params: { roomId } } : undefined);
+  const nodeRes = await graph.query(nodeQuery);
+  const edgeRes = await graph.query(edgeQuery);
 
   const nodes: GraphNode[] = (nodeRes.data || []).map((row: any) => {
     const n = row.n;
     const props = n.properties || {};
     return {
       id: props.id || String(n.id),
-      label: props.name || props.id || row.labelType,
+      label: props.name || props.description || props.id || row.labelType,
       type: row.labelType || "Location",
       properties: props,
     };
