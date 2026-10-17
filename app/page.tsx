@@ -66,9 +66,6 @@ export default function Home() {
       const data = await res.json();
       if (data.success && Array.isArray(data.rooms)) {
         setRooms(data.rooms);
-        if (data.rooms.length > 0 && !currentRoom) {
-          setCurrentRoom(data.rooms[0]);
-        }
       } else if (!data.success) {
         setErrorMessage(data.error || "FalkorDB unreachable");
       }
