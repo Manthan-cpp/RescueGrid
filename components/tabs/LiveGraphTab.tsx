@@ -32,9 +32,11 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
   // Node Drag & Canvas Pan State
   const [customPositions, setCustomPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const gRef = useRef<SVGGElement | null>(null);
 
   // Deterministic 2D Orbital Layout across 850x550 canvas
   const layoutNodes = useMemo(() => {
@@ -153,29 +155,65 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
   // -------------------------------------------------------------
   // Pan & Zoom Event Handlers (Canvas and Node Dragging)
   // -------------------------------------------------------------
-  const handleWheel = (e: React.WheelEvent<SVGSVGElement>) => {
-    e.preventDefault();
-    const zoomDelta = e.deltaY < 0 ? 0.08 : -0.08;
-    setZoomLevel((prev) => Math.min(Math.max(Number((prev + zoomDelta).toFixed(2)), 0.4), 3.0));
-  };
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    const handleNativeWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const zoomDelta = e.deltaY < 0 ? 0.08 : -0.08;
+      setZoomLevel((prev) => Math.min(Math.max(Number((prev + zoomDelta).toFixed(2)), 0.4), 3.0));
+    };
+
+    // passive: false is critical to prevent the browser from zooming the entire page!
+    svg.addEventListener("wheel", handleNativeWheel, { passive: false });
+    return () => {
+      svg.removeEventListener("wheel", handleNativeWheel);
+    };
+  }, []);
 
   const handleCanvasMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
-    // Only pan if clicking empty space, not a node
     if ((e.target as HTMLElement).tagName === "svg" || (e.target as HTMLElement).tagName === "rect") {
       setIsPanning(true);
       setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
     }
   };
 
+  const handleNodeMouseDown = (e: React.MouseEvent, node: any) => {
+    e.stopPropagation();
+    if (gRef.current && svgRef.current) {
+      const ctm = gRef.current.getScreenCTM()?.inverse();
+      if (ctm) {
+        const pt = svgRef.current.createSVGPoint();
+        pt.x = e.clientX;
+        pt.y = e.clientY;
+        const localPt = pt.matrixTransform(ctm);
+        setDragOffset({
+          x: node.x - localPt.x,
+          y: node.y - localPt.y,
+        });
+      }
+    }
+    setDraggingNodeId(node.id);
+  };
+
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (draggingNodeId && svgRef.current) {
-      const rect = svgRef.current.getBoundingClientRect();
-      const mouseX = (e.clientX - rect.left - pan.x) / zoomLevel;
-      const mouseY = (e.clientY - rect.top - pan.y) / zoomLevel;
-      setCustomPositions((prev) => ({
-        ...prev,
-        [draggingNodeId]: { x: Math.round(mouseX), y: Math.round(mouseY) },
-      }));
+    if (draggingNodeId && gRef.current && svgRef.current) {
+      const ctm = gRef.current.getScreenCTM()?.inverse();
+      if (ctm) {
+        const pt = svgRef.current.createSVGPoint();
+        pt.x = e.clientX;
+        pt.y = e.clientY;
+        const localPt = pt.matrixTransform(ctm);
+        setCustomPositions((prev) => ({
+          ...prev,
+          [draggingNodeId]: {
+            x: Math.round(localPt.x + dragOffset.x),
+            y: Math.round(localPt.y + dragOffset.y),
+          },
+        }));
+      }
     } else if (isPanning) {
       setPan({
         x: e.clientX - dragStart.x,
@@ -299,7 +337,6 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
             ref={svgRef}
             className={`w-full h-[580px] select-none ${isPanning ? "cursor-grabbing" : "cursor-grab"}`}
             viewBox="0 0 850 550"
-            onWheel={handleWheel}
             onMouseDown={handleCanvasMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
@@ -356,6 +393,7 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
             <rect width="850" height="550" fill="url(#graph-grid)" />
 
             <g
+              ref={gRef}
               transform={`translate(${pan.x}, ${pan.y}) scale(${zoomLevel})`}
               style={{ transformOrigin: "425px 275px" }}
             >
@@ -448,10 +486,7 @@ export function LiveGraphTab({ graphData }: LiveGraphTabProps) {
                       e.stopPropagation();
                       setSelectedNode(node);
                     }}
-                    onMouseDown={(e) => {
-                      e.stopPropagation();
-                      setDraggingNodeId(node.id);
-                    }}
+                    onMouseDown={(e) => handleNodeMouseDown(e, node)}
                     onMouseEnter={() => setHoveredNode(node)}
                     onMouseLeave={() => setHoveredNode(null)}
                     className="cursor-move"
