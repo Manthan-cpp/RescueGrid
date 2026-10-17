@@ -31,9 +31,9 @@ Update this section as phases complete:
 - [x] Phase 0 — Project Setup
 - [x] Phase 1 — UI Implementation (all screens, mock data wired, zero backend)
 - [x] Phase 2 — FalkorDB Schema & Connection
-- [ ] Phase 3 — Crisis Room + Live Data Ingestion
-- [ ] Phase 4 — Dispatch Agent
-- [ ] Phase 5 — Query Agent (Company Brain)
+- [x] Phase 3 — Crisis Room + Live Data Ingestion
+- [x] Phase 4 — Dispatch Agent
+- [x] Phase 5 — Query Agent (Company Brain)
 - [ ] Phase 6 — Memory & Multi-Agent Coordination
 - [ ] Phase 7 — Live Graph Visualization + Real-time Sync
 - [ ] Phase 8 — Demo Polish & Simulation Script

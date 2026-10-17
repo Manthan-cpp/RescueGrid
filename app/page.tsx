@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   ShieldAlert,
   Building2,
@@ -14,8 +14,8 @@ import {
   HelpCircle,
   Activity,
   LifeBuoy,
-  Flame,
-  CheckCircle2,
+  RefreshCw,
+  AlertCircle,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { CreateRoomModal } from "@/components/CreateRoomModal";
@@ -27,133 +27,171 @@ import { ResourcesTab } from "@/components/tabs/ResourcesTab";
 import { AskBrainTab } from "@/components/tabs/AskBrainTab";
 import { AgentActivityTab } from "@/components/tabs/AgentActivityTab";
 import {
-  FIXTURE_ROOMS,
-  FIXTURE_WARDS,
-  FIXTURE_SHELTERS,
-  FIXTURE_RESOURCES,
-  FIXTURE_SOS_REQUESTS,
-  FIXTURE_AGENT_LOGS,
-  FIXTURE_CHAT_MESSAGES,
-  FIXTURE_GRAPH_DATA,
-} from "@/lib/fixtures";
-import { CrisisRoom, SOSRequest, Resource, ChatMessage, AgentLogEntry, GraphData } from "@/lib/types";
+  CrisisRoom,
+  SOSRequest,
+  Resource,
+  Shelter,
+  WardLocation,
+  ChatMessage,
+  AgentLogEntry,
+  GraphData,
+} from "@/lib/types";
 
 export default function Home() {
   // Navigation & Modal State
-  const [rooms, setRooms] = useState<CrisisRoom[]>(FIXTURE_ROOMS);
-  const [currentRoom, setCurrentRoom] = useState<CrisisRoom | null>(FIXTURE_ROOMS[0]);
+  const [rooms, setRooms] = useState<CrisisRoom[]>([]);
+  const [currentRoom, setCurrentRoom] = useState<CrisisRoom | null>(null);
   const [activeTab, setActiveTab] = useState<string>("overview");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isSOSModalOpen, setIsSOSModalOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Core Data State (loaded from isolated fixtures in Phase 1)
-  const [sosRequests, setSosRequests] = useState<SOSRequest[]>(FIXTURE_SOS_REQUESTS);
-  const [resources, setResources] = useState<Resource[]>(FIXTURE_RESOURCES);
-  const [agentLogs, setAgentLogs] = useState<AgentLogEntry[]>(FIXTURE_AGENT_LOGS);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(FIXTURE_CHAT_MESSAGES);
-  const [graphData, setGraphData] = useState<GraphData>(FIXTURE_GRAPH_DATA);
+  // Live Graph Data State (Directly populated from FalkorDB)
+  const [sosRequests, setSosRequests] = useState<SOSRequest[]>([]);
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [shelters, setShelters] = useState<Shelter[]>([]);
+  const [wards, setWards] = useState<WardLocation[]>([]);
+  const [graphData, setGraphData] = useState<GraphData>({ nodes: [], edges: [] });
+  const [agentLogs, setAgentLogs] = useState<AgentLogEntry[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isBrainLoading, setIsBrainLoading] = useState(false);
 
-  // Handle Room Creation
-  const handleCreateRoom = (newRoom: CrisisRoom) => {
-    setRooms([newRoom, ...rooms]);
-    setCurrentRoom(newRoom);
-    setActiveTab("overview");
-  };
-
-  // Handle New SOS Broadcast (Simulate live dispatch action)
-  const handleNewSOS = (sosData: Partial<SOSRequest>) => {
-    const newId = `sos-${Date.now().toString().slice(-3)}`;
-    const newRequest: SOSRequest = {
-      id: newId,
-      description: sosData.description || "Urgent rescue needed",
-      urgency: sosData.urgency || "high",
-      status: "open",
-      timestamp: "Just now",
-      location_id: sosData.location_id || "ward-01",
-      location_name: sosData.location_name || "Meppadi Sector 1",
-      people_count: sosData.people_count || 1,
-    };
-
-    // Find first available boat or ambulance for auto-dispatch
-    const availableRes = resources.find((r) => r.status === "available");
-    if (availableRes) {
-      newRequest.status = "assigned";
-      newRequest.assigned_resource_id = availableRes.id;
-      newRequest.assigned_resource_name = availableRes.name;
-
-      // Update resource to assigned
-      setResources((prev) =>
-        prev.map((r) => (r.id === availableRes.id ? { ...r, status: "assigned" } : r))
-      );
-
-      // Log dispatch reasoning
-      const newLog: AgentLogEntry = {
-        id: `log-${Date.now().toString().slice(-3)}`,
-        timestamp: "Just now",
-        agent: "Dispatch Agent",
-        action: `Auto-assigned ${availableRes.name} to ${newId}`,
-        reasoning: `New SOS detected in ${newRequest.location_name}. Queried live graph for nearby resources with clear routes. Matched nearest unit (${availableRes.name}) staged at ${availableRes.location_name}. Written to graph as ASSIGNED_TO edge.`,
-        model_used: "Gemini 1.5 Flash",
-        status: "success",
-        sos_id: newId,
-        resource_id: availableRes.id,
-      };
-      setAgentLogs((prev) => [newLog, ...prev]);
-
-      // Add to graph
-      setGraphData((prev) => ({
-        nodes: [
-          ...prev.nodes,
-          {
-            id: newId,
-            label: `${newId} (${newRequest.people_count}p)`,
-            type: "SOSRequest",
-            properties: { urgency: newRequest.urgency, status: "assigned" },
-          },
-        ],
-        edges: [
-          ...prev.edges,
-          { id: `e-${Date.now()}-1`, source: newId, target: newRequest.location_id, label: "LOCATED_IN" },
-          { id: `e-${Date.now()}-2`, source: newId, target: availableRes.id, label: "ASSIGNED_TO" },
-        ],
-      }));
-    } else {
-      // No resource available
-      const alertLog: AgentLogEntry = {
-        id: `log-${Date.now().toString().slice(-3)}`,
-        timestamp: "Just now",
-        agent: "Dispatch Agent",
-        action: `Queued ${newId} (Deficit Alert)`,
-        reasoning: `Evaluated ${newRequest.location_name}. All sector assets currently committed. Escalated to standby volunteer pool and regional staging hubs.`,
-        model_used: "Gemini 1.5 Flash",
-        status: "warning",
-        sos_id: newId,
-      };
-      setAgentLogs((prev) => [alertLog, ...prev]);
-
-      setGraphData((prev) => ({
-        nodes: [
-          ...prev.nodes,
-          {
-            id: newId,
-            label: `${newId} (Unassigned)`,
-            type: "SOSRequest",
-            properties: { urgency: newRequest.urgency, status: "open" },
-          },
-        ],
-        edges: [
-          ...prev.edges,
-          { id: `e-${Date.now()}`, source: newId, target: newRequest.location_id, label: "LOCATED_IN" },
-        ],
-      }));
+  // 1. Fetch Rooms from FalkorDB
+  const fetchRooms = useCallback(async () => {
+    try {
+      setErrorMessage(null);
+      const res = await fetch("/api/rooms");
+      const data = await res.json();
+      if (data.success && Array.isArray(data.rooms)) {
+        setRooms(data.rooms);
+        if (data.rooms.length > 0 && !currentRoom) {
+          setCurrentRoom(data.rooms[0]);
+        }
+      } else if (!data.success) {
+        setErrorMessage(data.error || "FalkorDB unreachable");
+      }
+    } catch (err: any) {
+      console.error("Failed to fetch rooms:", err);
+      setErrorMessage("Could not connect to FalkorDB Cloud. Verify connection.");
+    } finally {
+      setIsLoading(false);
     }
+  }, [currentRoom]);
 
-    setSosRequests([newRequest, ...sosRequests]);
+  // 2. Fetch Room Details & Live Graph from FalkorDB
+  const fetchRoomDetails = useCallback(async (roomId: string) => {
+    setIsRefreshing(true);
+    try {
+      const res = await fetch(`/api/rooms/${roomId}`);
+      const data = await res.json();
+      if (data.success) {
+        setWards(data.wards || []);
+        setShelters(data.shelters || []);
+        setResources(data.resources || []);
+        setSosRequests(data.sosRequests || []);
+        setGraphData(data.graphData || { nodes: [], edges: [] });
+      }
+    } catch (err: any) {
+      console.error("Failed to fetch room details:", err);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  // Initial load
+  useEffect(() => {
+    fetchRooms();
+  }, [fetchRooms]);
+
+  // Load details whenever currentRoom changes
+  useEffect(() => {
+    if (currentRoom) {
+      fetchRoomDetails(currentRoom.id);
+    }
+  }, [currentRoom, fetchRoomDetails]);
+
+  // Handle Room Creation
+  const handleCreateRoom = async (roomData: CrisisRoom) => {
+    try {
+      setIsLoading(true);
+      const res = await fetch("/api/rooms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: roomData.name, location: roomData.location }),
+      });
+      const data = await res.json();
+      if (data.success && data.room) {
+        setRooms((prev) => [data.room, ...prev]);
+        setCurrentRoom(data.room);
+        setActiveTab("overview");
+      }
+    } catch (err) {
+      console.error("Error creating room:", err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  // Handle Query Agent Chat in Ask The Brain
-  const handleSendBrainMessage = (queryText: string) => {
+  // Handle New SOS Broadcast (Calls real FalkorDB API + autonomous Dispatch Agent)
+  const handleNewSOS = async (sosData: Partial<SOSRequest>) => {
+    if (!currentRoom) return;
+
+    try {
+      const res = await fetch("/api/sos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...sosData,
+          roomId: currentRoom.id,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        // Log Dispatch Agent reasoning in activity timeline
+        if (data.dispatch) {
+          const newLog: AgentLogEntry = {
+            id: `log-${Date.now()}`,
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            agent: "Dispatch Agent",
+            action: data.dispatch.assigned
+              ? `Assigned ${data.dispatch.resourceName} to ${data.sos.id}`
+              : `Queued ${data.sos.id} (Resource Deficit)`,
+            reasoning: data.dispatch.reasoning,
+            model_used: data.dispatch.modelUsed,
+            status: data.dispatch.status,
+            sos_id: data.sos.id,
+            resource_id: data.dispatch.resourceId,
+          };
+          setAgentLogs((prev) => [newLog, ...prev]);
+        }
+
+        // Refresh live graph and room data from FalkorDB
+        await fetchRoomDetails(currentRoom.id);
+      }
+    } catch (err) {
+      console.error("Error broadcasting SOS:", err);
+    }
+  };
+
+  // Handle SOS Resolution
+  const handleResolveSOS = async (sosId: string) => {
+    if (!currentRoom) return;
+    try {
+      const res = await fetch(`/api/sos/${sosId}/resolve`, { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        await fetchRoomDetails(currentRoom.id);
+      }
+    } catch (err) {
+      console.error("Error resolving SOS:", err);
+    }
+  };
+
+  // Handle Query Agent in Ask the Brain
+  const handleSendBrainMessage = async (queryText: string) => {
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}-user`,
       sender: "user",
@@ -164,28 +202,74 @@ export default function Home() {
     setChatMessages((prev) => [...prev, userMsg]);
     setIsBrainLoading(true);
 
-    setTimeout(() => {
+    try {
+      const res = await fetch("/api/brain", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: queryText, roomId: currentRoom?.id }),
+      });
+
+      const data = await res.json();
       const brainMsg: ChatMessage = {
         id: `msg-${Date.now()}-brain`,
         sender: "brain",
-        text: `Analysis complete for "${queryText}": Traversing graph across active wards and resources. Verified 0 hallucinations by grounding answer in live Cypher traversal result. Current open SOS count: ${sosRequests.filter(s => s.status === 'open').length}, Available resources: ${resources.filter(r => r.status === 'available').length}.`,
+        text: data.answer || "Query completed.",
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        cypher_query: `MATCH (w:Location)<-[:LOCATED_IN]-(s:SOSRequest) OPTIONAL MATCH (w)<-[:LOCATED_IN]-(r:Resource) RETURN w.name, count(s) as requests, count(r) as resources`,
-        execution_ms: 12,
-        model_used: "Groq (Qwen 3.8 / LLaMA)",
+        cypher_query: data.cypher,
+        execution_ms: data.executionMs || 15,
+        model_used: data.modelUsed,
       };
+
       setChatMessages((prev) => [...prev, brainMsg]);
+    } catch (err) {
+      console.error("Error querying brain:", err);
+      const errMsg: ChatMessage = {
+        id: `msg-${Date.now()}-err`,
+        sender: "brain",
+        text: "Error executing query against FalkorDB. Please check connection.",
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      };
+      setChatMessages((prev) => [...prev, errMsg]);
+    } finally {
       setIsBrainLoading(false);
-    }, 600);
+    }
   };
 
-  const handleResolveSOS = (sosId: string) => {
-    setSosRequests((prev) =>
-      prev.map((s) => (s.id === sosId ? { ...s, status: "resolved" } : s))
+  // Top level error banner if FalkorDB connection fails
+  if (errorMessage && rooms.length === 0 && !isLoading) {
+    return (
+      <div className="min-h-screen bg-[#F7F7F5] flex flex-col items-center justify-center p-4">
+        <div className="bg-white border border-red-300 rounded-lg p-6 max-w-md w-full shadow-md text-center">
+          <AlertCircle className="w-10 h-10 text-red-600 mx-auto mb-3" />
+          <h2 className="text-lg font-bold text-gray-900">FalkorDB Connection Notice</h2>
+          <p className="text-xs text-gray-600 mt-2 leading-relaxed">
+            {errorMessage}
+          </p>
+          <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-center space-x-3">
+            <button
+              onClick={() => fetchRooms()}
+              className="px-4 py-2 bg-gray-900 text-white rounded text-xs font-semibold hover:bg-gray-800"
+            >
+              Retry Connection
+            </button>
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="px-4 py-2 bg-red-600 text-white rounded text-xs font-semibold hover:bg-red-700"
+            >
+              + Initialize First Crisis Room
+            </button>
+          </div>
+        </div>
+        <CreateRoomModal
+          isOpen={isCreateModalOpen}
+          onClose={() => setIsCreateModalOpen(false)}
+          onCreate={handleCreateRoom}
+        />
+      </div>
     );
-  };
+  }
 
-  // If user navigated away from room to landing list
+  // Landing Page: Crisis Room Selection
   if (!currentRoom) {
     return (
       <div className="min-h-screen bg-[#F7F7F5] flex flex-col">
@@ -200,7 +284,7 @@ export default function Home() {
                 Crisis Command Rooms
               </h1>
               <p className="text-sm text-gray-500 mt-1">
-                Select an ongoing operational room or initialize a new response zone on FalkorDB.
+                Connected to live FalkorDB instance. Select an active crisis room or create one.
               </p>
             </div>
             <button
@@ -212,54 +296,62 @@ export default function Home() {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {rooms.map((room) => (
-              <div
-                key={room.id}
-                onClick={() => {
-                  setCurrentRoom(room);
-                  setActiveTab("overview");
-                }}
-                className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm hover:border-gray-400 cursor-pointer transition-all flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-700">
-                      {room.id}
-                    </span>
-                    <span
-                      className={`inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded border ${
-                        room.status === "active"
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          : "bg-gray-100 text-gray-600 border-gray-200"
-                      }`}
-                    >
-                      {room.status === "active" && (
+          {rooms.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {rooms.map((room) => (
+                <div
+                  key={room.id}
+                  onClick={() => {
+                    setCurrentRoom(room);
+                    setActiveTab("overview");
+                  }}
+                  className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm hover:border-gray-400 cursor-pointer transition-all flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-mono font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-700">
+                        {room.id}
+                      </span>
+                      <span className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" />
-                      )}
-                      {room.status.toUpperCase()}
+                        LIVE GRAPH
+                      </span>
+                    </div>
+                    <h3 className="text-base font-bold text-gray-900 mt-3">
+                      {room.name}
+                    </h3>
+                    <div className="flex items-center text-xs text-gray-500 mt-1 space-x-1">
+                      <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                      <span>{room.location}</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 pt-4 border-t border-gray-100 flex items-center justify-between text-xs">
+                    <span className="text-gray-400 font-mono">
+                      FalkorDB Verified
+                    </span>
+                    <span className="font-semibold text-blue-600 flex items-center">
+                      Enter Crisis Room <ArrowRight className="w-3.5 h-3.5 ml-1" />
                     </span>
                   </div>
-                  <h3 className="text-base font-bold text-gray-900 mt-3">
-                    {room.name}
-                  </h3>
-                  <div className="flex items-center text-xs text-gray-500 mt-1 space-x-1">
-                    <MapPin className="w-3.5 h-3.5 text-gray-400" />
-                    <span>{room.location}</span>
-                  </div>
                 </div>
-
-                <div className="mt-6 pt-4 border-t border-gray-100 flex items-center justify-between text-xs">
-                  <span className="text-gray-400 font-mono">
-                    Created: {new Date(room.created_at).toLocaleDateString()}
-                  </span>
-                  <span className="font-semibold text-blue-600 flex items-center">
-                    Enter Crisis Room <ArrowRight className="w-3.5 h-3.5 ml-1" />
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
+              <Building2 className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <h3 className="text-base font-bold text-gray-900">No Crisis Rooms Active</h3>
+              <p className="text-xs text-gray-500 max-w-sm mx-auto mt-1 mb-4">
+                FalkorDB currently has zero crisis rooms. Initialize the first crisis zone to seed initial wards and emergency infrastructure.
+              </p>
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="px-4 py-2 bg-red-600 text-white rounded text-xs font-semibold hover:bg-red-700 shadow-sm"
+              >
+                + Initialize First Crisis Room
+              </button>
+            </div>
+          )}
         </main>
 
         <CreateRoomModal
@@ -275,15 +367,14 @@ export default function Home() {
   const tabs = [
     { id: "overview", label: "Overview", icon: Activity },
     { id: "graph", label: "Live Graph", icon: Layers, count: graphData.nodes.length },
-    { id: "sos", label: "SOS Requests", icon: ShieldAlert, count: sosRequests.filter(s => s.status === 'open').length },
-    { id: "resources", label: "Resources", icon: LifeBuoy, count: resources.filter(r => r.status === 'available').length },
+    { id: "sos", label: "SOS Requests", icon: ShieldAlert, count: sosRequests.filter((s) => s.status === "open").length },
+    { id: "resources", label: "Resources", icon: LifeBuoy, count: resources.filter((r) => r.status === "available").length },
     { id: "brain", label: "Ask the Brain", icon: Sparkles },
     { id: "activity", label: "Agent Activity Log", icon: Clock, count: agentLogs.length },
   ];
 
   return (
     <div className="min-h-screen bg-[#F7F7F5] flex flex-col">
-      {/* Top App Navbar */}
       <Navbar
         currentRoom={currentRoom}
         onOpenCreateModal={() => setIsCreateModalOpen(true)}
@@ -291,7 +382,6 @@ export default function Home() {
         onOpenNewSOSModal={() => setIsSOSModalOpen(true)}
       />
 
-      {/* Main Dashboard Container */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
         {/* Room Header Banner */}
         <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -300,8 +390,9 @@ export default function Home() {
               <span className="text-xs font-mono font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-700">
                 {currentRoom.id}
               </span>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded bg-red-100 text-red-800 border border-red-200 uppercase font-mono">
-                Active Crisis Operations
+              <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 uppercase font-mono flex items-center">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" />
+                Live FalkorDB Brain
               </span>
             </div>
             <h1 className="text-xl font-bold text-gray-950 mt-1">
@@ -310,12 +401,18 @@ export default function Home() {
             <p className="text-xs text-gray-500 mt-0.5 flex items-center space-x-1">
               <MapPin className="w-3.5 h-3.5 text-gray-400" />
               <span>{currentRoom.location}</span>
-              <span className="text-gray-300">·</span>
-              <span className="font-mono">Created {new Date(currentRoom.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
             </p>
           </div>
 
           <div className="flex items-center space-x-2">
+            <button
+              onClick={() => fetchRoomDetails(currentRoom.id)}
+              disabled={isRefreshing}
+              className="p-2 border border-gray-200 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-colors"
+              title="Refresh Graph State"
+            >
+              <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
+            </button>
             <button
               onClick={() => setIsSOSModalOpen(true)}
               className="inline-flex items-center px-4 py-2 text-xs font-semibold rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors shadow-sm"
@@ -326,7 +423,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Tab Navigation Navigation Bar (DESIGN.md: Rectangular tabs, 4-8px radius, no pill buttons) */}
+        {/* Tab Navigation */}
         <div className="border-b border-gray-200 mb-6 flex space-x-1 overflow-x-auto">
           {tabs.map((tab) => {
             const Icon = tab.icon;
@@ -364,8 +461,8 @@ export default function Home() {
           <OverviewTab
             sosRequests={sosRequests}
             resources={resources}
-            shelters={FIXTURE_SHELTERS}
-            wards={FIXTURE_WARDS}
+            shelters={shelters}
+            wards={wards}
             agentLogs={agentLogs}
             onNavigateTab={(tab) => setActiveTab(tab)}
             onOpenSOSModal={() => setIsSOSModalOpen(true)}
@@ -377,7 +474,7 @@ export default function Home() {
         {activeTab === "sos" && (
           <SOSRequestsTab
             sosRequests={sosRequests}
-            wards={FIXTURE_WARDS}
+            wards={wards}
             onOpenSOSModal={() => setIsSOSModalOpen(true)}
             onResolveSOS={handleResolveSOS}
           />
@@ -405,7 +502,7 @@ export default function Home() {
 
       <NewSOSModal
         isOpen={isSOSModalOpen}
-        wards={FIXTURE_WARDS}
+        wards={wards}
         onClose={() => setIsSOSModalOpen(false)}
         onSubmit={handleNewSOS}
       />

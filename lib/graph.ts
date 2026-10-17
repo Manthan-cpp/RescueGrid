@@ -346,3 +346,66 @@ export async function executeCypher(
   const durationMs = Date.now() - start;
   return { data: res.data || [], durationMs };
 }
+
+// -------------------------------------------------------------
+// 6. Comprehensive Room State Retrieval
+// -------------------------------------------------------------
+export async function getRoomDetails(roomId: string) {
+  const graph = await getGraph();
+
+  // Wards
+  const wardsRes = await graph.query(
+    `MATCH (cr:CrisisRoom { id: $roomId })-[:HAS_ZONE]->(w:Location)
+     RETURN w`,
+    { params: { roomId } }
+  );
+  const wards: WardLocation[] = (wardsRes.data || []).map((row: any) => row.w.properties || row.w);
+
+  // Shelters
+  const sheltersRes = await graph.query(
+    `MATCH (cr:CrisisRoom { id: $roomId })-[:HAS_ZONE]->(w:Location)<-[:LOCATED_IN]-(sh:Shelter)
+     RETURN sh, w.name as location_name`,
+    { params: { roomId } }
+  );
+  const shelters: Shelter[] = (sheltersRes.data || []).map((row: any) => ({
+    ...(row.sh.properties || row.sh),
+    location_name: row.location_name,
+  }));
+
+  // Resources
+  const resourcesRes = await graph.query(
+    `MATCH (cr:CrisisRoom { id: $roomId })-[:HAS_ZONE]->(w:Location)<-[:LOCATED_IN]-(r:Resource)
+     OPTIONAL MATCH (r)-[:OWNED_BY]->(ag:Agency)
+     RETURN r, w.name as location_name, ag.name as agency_name`,
+    { params: { roomId } }
+  );
+  const resources: Resource[] = (resourcesRes.data || []).map((row: any) => ({
+    ...(row.r.properties || row.r),
+    location_name: row.location_name,
+    agency_name: row.agency_name,
+  }));
+
+  // SOS Requests
+  const sosRes = await graph.query(
+    `MATCH (cr:CrisisRoom { id: $roomId })-[:HAS_ZONE]->(w:Location)<-[:LOCATED_IN]-(s:SOSRequest)
+     OPTIONAL MATCH (s)-[:ASSIGNED_TO]->(res:Resource)
+     RETURN s, w.name as location_name, res.name as assigned_resource_name`,
+    { params: { roomId } }
+  );
+  const sosRequests: SOSRequest[] = (sosRes.data || []).map((row: any) => ({
+    ...(row.s.properties || row.s),
+    location_name: row.location_name,
+    assigned_resource_name: row.assigned_resource_name,
+  }));
+
+  // Full Graph
+  const graphData = await getFullGraphData(roomId);
+
+  return {
+    wards,
+    shelters,
+    resources,
+    sosRequests,
+    graphData,
+  };
+}
