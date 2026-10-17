@@ -29,7 +29,7 @@ dispatch resources, coordinate with each other, and answer questions instantly
 ## Current status
 Update this section as phases complete:
 - [x] Phase 0 — Project Setup
-- [ ] Phase 1 — UI Implementation (all screens, mock data wired, zero backend)
+- [x] Phase 1 — UI Implementation (all screens, mock data wired, zero backend)
 - [ ] Phase 2 — FalkorDB Schema & Connection
 - [ ] Phase 3 — Crisis Room + Live Data Ingestion
 - [ ] Phase 4 — Dispatch Agent
