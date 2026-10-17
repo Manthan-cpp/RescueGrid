@@ -3,10 +3,24 @@ import { getRoomDetails } from "@/lib/graph";
 
 export async function GET(
   req: Request,
-  { params }: { params: Promise<{ roomId: string }> }
+  context: any
 ) {
   try {
-    const { roomId } = await params;
+    let roomId = "";
+    if (context?.params) {
+      const resolved = context.params instanceof Promise ? await context.params : context.params;
+      roomId = resolved?.roomId || "";
+    }
+
+    if (!roomId) {
+      const url = new URL(req.url);
+      roomId = url.searchParams.get("roomId") || "";
+    }
+
+    if (!roomId) {
+      return NextResponse.json({ success: false, error: "Missing roomId" }, { status: 400 });
+    }
+
     const details = await getRoomDetails(roomId);
 
     return NextResponse.json({

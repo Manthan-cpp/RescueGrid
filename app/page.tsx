@@ -84,7 +84,7 @@ export default function Home() {
   const fetchRoomDetails = useCallback(async (roomId: string) => {
     setIsRefreshing(true);
     try {
-      const res = await fetch(`/api/rooms/${roomId}`);
+      const res = await fetch(`/api/room-details?roomId=${roomId}`);
       const data = await res.json();
       if (data.success) {
         setWards(data.wards || []);
