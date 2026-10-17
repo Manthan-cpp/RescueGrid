@@ -29,6 +29,7 @@ export function SOSRequestsTab({
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [wardFilter, setWardFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
 
   const filteredRequests = sosRequests.filter((req) => {
     if (statusFilter !== "all" && req.status !== statusFilter) return false;
@@ -211,10 +212,18 @@ export function SOSRequestsTab({
                     <td className="py-3 px-4 text-right whitespace-nowrap">
                       {req.status !== "resolved" && onResolveSOS ? (
                         <button
-                          onClick={() => onResolveSOS(req.id)}
-                          className="px-2.5 py-1 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded transition-colors"
+                          disabled={resolvingId === req.id}
+                          onClick={async () => {
+                            setResolvingId(req.id);
+                            try {
+                              await onResolveSOS(req.id);
+                            } finally {
+                              setResolvingId(null);
+                            }
+                          }}
+                          className="px-2.5 py-1 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 border border-emerald-200 rounded transition-colors"
                         >
-                          Mark Resolved
+                          {resolvingId === req.id ? "Resolving..." : "Mark Resolved"}
                         </button>
                       ) : (
                         <span className="text-gray-400 text-xs">Completed</span>

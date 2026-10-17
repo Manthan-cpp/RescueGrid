@@ -16,6 +16,7 @@ import {
   LifeBuoy,
   RefreshCw,
   AlertCircle,
+  Trash2,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { CreateRoomModal } from "@/components/CreateRoomModal";
@@ -173,17 +174,56 @@ export default function Home() {
     }
   };
 
+  // Handle Room Deletion
+  const handleDeleteRoom = async (roomId: string) => {
+    if (!window.confirm("Are you sure you want to delete this crisis room from FalkorDB?")) {
+      return;
+    }
+    try {
+      setRooms((prev) => prev.filter((r) => r.id !== roomId));
+      if (currentRoom?.id === roomId) {
+        setCurrentRoom(null);
+      }
+      await fetch(`/api/rooms?roomId=${roomId}`, { method: "DELETE" });
+    } catch (err) {
+      console.error("Error deleting room:", err);
+      fetchRooms();
+    }
+  };
+
   // Handle SOS Resolution
   const handleResolveSOS = async (sosId: string) => {
     if (!currentRoom) return;
+
+    // 1. Optimistic update: mark resolved immediately in UI
+    setSosRequests((prev) =>
+      prev.map((s) => (s.id === sosId ? { ...s, status: "resolved" } : s))
+    );
+
+    // 2. Optimistic update: free any assigned resource back to available
+    setResources((prev) =>
+      prev.map((r) => {
+        const matchingSOS = sosRequests.find((s) => s.id === sosId);
+        if (matchingSOS?.assigned_resource_id === r.id || matchingSOS?.assigned_resource_name === r.name) {
+          return { ...r, status: "available" };
+        }
+        return r;
+      })
+    );
+
     try {
-      const res = await fetch(`/api/sos/${sosId}/resolve`, { method: "POST" });
+      const res = await fetch("/api/sos/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sosId }),
+      });
       const data = await res.json();
       if (data.success) {
         await fetchRoomDetails(currentRoom.id);
       }
     } catch (err) {
       console.error("Error resolving SOS:", err);
+      await fetchRoomDetails(currentRoom.id);
     }
   };
 
@@ -348,13 +388,25 @@ export default function Home() {
                 >
                   <div>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-mono font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-700">
-                        {room.id}
-                      </span>
-                      <span className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" />
-                        LIVE GRAPH
-                      </span>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs font-mono font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-700">
+                          {room.id}
+                        </span>
+                        <span className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" />
+                          LIVE GRAPH
+                        </span>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteRoom(room.id);
+                        }}
+                        className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                        title="Delete Crisis Room"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                     <h3 className="text-base font-bold text-gray-900 mt-3">
                       {room.name}

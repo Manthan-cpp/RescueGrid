@@ -318,16 +318,31 @@ export async function assignResourceToSOS(
 
 export async function resolveSOS(sosId: string): Promise<void> {
   const graph = await getGraph();
-  const cypher = `
-    MATCH (s:SOSRequest { id: $sosId })
-    OPTIONAL MATCH (s)-[a:ASSIGNED_TO]->(r:Resource)
-    SET s.status = 'resolved'
-    SET r.status = 'available'
-    DELETE a
-    RETURN s
-  `;
+  
+  // 1. Mark SOS as resolved
+  await graph.query(
+    `MATCH (s:SOSRequest { id: $sosId }) SET s.status = 'resolved' RETURN s`,
+    { params: { sosId } }
+  );
 
-  await graph.query(cypher, { params: { sosId } });
+  // 2. If it was assigned to a resource, release the resource back to 'available' and delete ASSIGNED_TO edge
+  await graph.query(
+    `MATCH (s:SOSRequest { id: $sosId })-[a:ASSIGNED_TO]->(r:Resource)
+     SET r.status = 'available'
+     DELETE a`,
+    { params: { sosId } }
+  );
+}
+
+export async function deleteCrisisRoom(roomId: string): Promise<void> {
+  const graph = await getGraph();
+  const cypher = `
+    MATCH (cr:CrisisRoom { id: $roomId })
+    OPTIONAL MATCH (cr)-[:HAS_ZONE]->(loc:Location)
+    OPTIONAL MATCH (loc)<-[:LOCATED_IN]-(item)
+    DETACH DELETE cr, loc, item
+  `;
+  await graph.query(cypher, { params: { roomId } });
 }
 
 // -------------------------------------------------------------
@@ -343,7 +358,62 @@ export async function getCrisisRooms(): Promise<CrisisRoom[]> {
 export async function getFullGraphData(roomId?: string): Promise<GraphData> {
   const graph = await getGraph();
   
-  // Return all nodes and edges in the crisis perimeter
+  if (roomId) {
+    const nodeQuery = `
+      MATCH (cr:CrisisRoom { id: $roomId })
+      OPTIONAL MATCH (cr)-[:HAS_ZONE]->(loc:Location)
+      OPTIONAL MATCH (loc)<-[:LOCATED_IN]-(r:Resource)
+      OPTIONAL MATCH (r)-[:OWNED_BY]->(ag:Agency)
+      OPTIONAL MATCH (loc)<-[:LOCATED_IN]-(sh:Shelter)
+      OPTIONAL MATCH (loc)<-[:LOCATED_IN]-(s:SOSRequest)
+      OPTIONAL MATCH (s)-[:ASSIGNED_TO]->(res:Resource)
+      WITH [cr, loc, r, ag, sh, s, res] AS nodeGroups
+      UNWIND nodeGroups AS n
+      WITH DISTINCT n
+      WHERE n IS NOT NULL
+      RETURN n, labels(n)[0] as labelType
+    `;
+
+    const [nodeRes, hzRes, connRes, locRes, asgnRes, ownRes] = await Promise.all([
+      graph.query(nodeQuery, { params: { roomId } }),
+      graph.query(`MATCH (cr:CrisisRoom { id: $roomId })-[r:HAS_ZONE]->(loc:Location) RETURN cr.id as source, loc.id as target, 'HAS_ZONE' as relType`, { params: { roomId } }),
+      graph.query(`MATCH (cr:CrisisRoom { id: $roomId })-[:HAS_ZONE]->(l1:Location)-[r:CONNECTED_BY]->(l2:Location)<-[:HAS_ZONE]-(cr) RETURN l1.id as source, l2.id as target, 'CONNECTED_BY' as relType`, { params: { roomId } }),
+      graph.query(`MATCH (cr:CrisisRoom { id: $roomId })-[:HAS_ZONE]->(loc:Location)<-[r:LOCATED_IN]-(item) RETURN item.id as source, loc.id as target, 'LOCATED_IN' as relType`, { params: { roomId } }),
+      graph.query(`MATCH (cr:CrisisRoom { id: $roomId })-[:HAS_ZONE]->(loc:Location)<-[:LOCATED_IN]-(s:SOSRequest)-[r:ASSIGNED_TO]->(res:Resource) RETURN s.id as source, res.id as target, 'ASSIGNED_TO' as relType`, { params: { roomId } }),
+      graph.query(`MATCH (cr:CrisisRoom { id: $roomId })-[:HAS_ZONE]->(loc:Location)<-[:LOCATED_IN]-(res:Resource)-[r:OWNED_BY]->(ag:Agency) RETURN res.id as source, ag.id as target, 'OWNED_BY' as relType`, { params: { roomId } }),
+    ]);
+
+    const nodes: GraphNode[] = (nodeRes.data || []).map((row: any) => {
+      const n = row.n;
+      const props = n.properties || {};
+      return {
+        id: props.id || String(n.id),
+        label: props.name || props.description || props.id || row.labelType,
+        type: row.labelType || "Location",
+        properties: props,
+      };
+    });
+
+    const rawEdges = [
+      ...(hzRes.data || []),
+      ...(connRes.data || []),
+      ...(locRes.data || []),
+      ...(asgnRes.data || []),
+      ...(ownRes.data || []),
+    ];
+
+    const edges: GraphEdge[] = rawEdges.map((row: any, idx: number) => ({
+      id: `edge-${idx}`,
+      source: row.source,
+      target: row.target,
+      label: row.relType || "CONNECTED",
+      properties: {},
+    }));
+
+    return { nodes, edges };
+  }
+
+  // Fallback if no roomId provided
   const nodeQuery = `
     MATCH (n)
     RETURN DISTINCT n, labels(n)[0] as labelType

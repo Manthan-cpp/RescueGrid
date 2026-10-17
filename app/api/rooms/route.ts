@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCrisisRooms, createCrisisRoom } from "@/lib/graph";
+import { getCrisisRooms, createCrisisRoom, deleteCrisisRoom } from "@/lib/graph";
 import { CrisisRoom } from "@/lib/types";
 
 export async function GET() {
@@ -61,6 +61,31 @@ export async function POST(req: Request) {
     console.error("Error creating crisis room in FalkorDB:", error);
     return NextResponse.json(
       { success: false, error: error.message || "Failed to create crisis room" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const url = new URL(req.url);
+    let roomId = url.searchParams.get("roomId");
+
+    if (!roomId) {
+      const body = await req.json().catch(() => ({}));
+      roomId = body.roomId;
+    }
+
+    if (!roomId) {
+      return NextResponse.json({ success: false, error: "roomId is required" }, { status: 400 });
+    }
+
+    await deleteCrisisRoom(roomId);
+    return NextResponse.json({ success: true, roomId });
+  } catch (error: any) {
+    console.error("Error deleting crisis room in FalkorDB:", error);
+    return NextResponse.json(
+      { success: false, error: error.message || "Failed to delete crisis room" },
       { status: 500 }
     );
   }
