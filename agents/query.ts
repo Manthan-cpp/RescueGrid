@@ -39,14 +39,42 @@ You convert natural language questions from crisis coordinators into precise Cyp
 Exact Schema:
 ${GRAPH_SCHEMA}
 
-Rules:
-1. Generate READ-ONLY Cypher queries (MATCH, WHERE, WITH, RETURN, ORDER BY, LIMIT). NEVER generate CREATE, DELETE, or SET.
-2. If filtering by room, note that (CrisisRoom {id: '${roomId || ""}'})-[:HAS_ZONE]->(Location).
-3. If the question cannot be answered by this graph schema, return an empty string for cypher.
-4. Output STRICT JSON only. Format:
+CRITICAL FALKORDB / OPENCYPHER RULES:
+1. Generate READ-ONLY Cypher queries (MATCH, OPTIONAL MATCH, WHERE, WITH, RETURN, ORDER BY, LIMIT). NEVER generate CREATE, DELETE, or SET.
+2. NEVER use 'EXISTS { MATCH ... }' or '{ MATCH ... }' subquery blocks! FalkorDB does NOT support subquery blocks and will throw a syntax error.
+3. To test absence of a node or relationship, use 'OPTIONAL MATCH ... WITH ... WHERE var IS NULL'.
+4. Do NOT use Neo4j-specific functions like datetime(), date(), or apoc.*.
+5. If filtering by room: ${roomId ? `MATCH (cr:CrisisRoom { id: '${roomId}' })-[:HAS_ZONE]->(loc:Location)` : "MATCH (loc:Location)"}
+6. Output STRICT JSON only. Format:
 {
   "cypher": "MATCH ... RETURN ..."
-}`;
+}
+
+FEW-SHOT EXAMPLES:
+Question: "Which wards currently have open critical SOS requests and no boats nearby?"
+Cypher:
+MATCH (loc:Location)<-[:LOCATED_IN]-(sos:SOSRequest)
+WHERE sos.urgency = 'critical' AND sos.status = 'open'
+OPTIONAL MATCH (boat:Resource { type: 'boat', status: 'available' })-[:LOCATED_IN]->(loc)
+WITH loc, sos, boat
+WHERE boat IS NULL
+RETURN loc.name AS ward_name, sos.id AS sos_id, sos.description AS emergency, sos.urgency AS urgency
+
+Question: "What is the remaining shelter bed capacity in Kalpetta and Vythiri?"
+Cypher:
+MATCH (s:Shelter)
+WHERE s.name CONTAINS 'Kalpetta' OR s.name CONTAINS 'Vythiri'
+RETURN s.name AS shelter, s.capacity AS total_capacity, s.current_occupancy AS occupancy, (s.capacity - s.current_occupancy) AS available_beds
+
+Question: "List all available ambulances and their current staging locations"
+Cypher:
+MATCH (r:Resource { type: 'ambulance', status: 'available' })-[:LOCATED_IN]->(loc:Location)
+RETURN r.id AS resource_id, r.name AS name, loc.name AS staging_location, r.capacity AS capacity
+
+Question: "Which evacuation routes are currently marked as blocked by mudslides?"
+Cypher:
+MATCH (l1:Location)-[r:CONNECTED_BY { status: 'blocked' }]->(l2:Location)
+RETURN l1.name AS from_sector, l2.name AS to_sector, r.status AS route_status`;
 
   let generatedCypher = "";
   let modelUsed = "Groq LLaMA 3.3";
@@ -59,12 +87,12 @@ Rules:
         { role: "system", content: systemPrompt },
         { role: "user", content: `Question: "${userQuestion}"` },
       ],
-      model: "qwen/qwen3.8-27b",
+      model: "llama-3.3-70b-versatile",
       response_format: { type: "json_object" },
     });
     const parsed = JSON.parse(completion.choices[0]?.message?.content || "{}");
     generatedCypher = parsed.cypher || "";
-    modelUsed = "Groq (Qwen 3.8 / LLaMA)";
+    modelUsed = "Groq (LLaMA 3.3)";
   } catch (err: any) {
     console.warn("Groq failed for Query Agent, falling back to Gemini:", err.message);
     try {
@@ -93,7 +121,7 @@ Rules:
     };
   }
 
-  // Step 2: Run Query against FalkorDB
+  // Step 2: Run Query against FalkorDB with Auto-Repair fallback
   let graphResult: any[] = [];
   let executionMs = 0;
   try {
@@ -101,14 +129,42 @@ Rules:
     graphResult = res.data;
     executionMs = res.durationMs;
   } catch (dbErr: any) {
-    console.error("FalkorDB Cypher execution error:", dbErr.message);
-    return {
-      answer: `The generated graph query encountered an execution error in FalkorDB: ${dbErr.message}`,
-      cypher: generatedCypher,
-      executionMs: 0,
-      modelUsed,
-      graphData: [],
-    };
+    console.warn("FalkorDB Cypher execution error, attempting auto-repair:", dbErr.message);
+    try {
+      const repairPrompt = `The following Cypher query failed on FalkorDB with error:
+Error: "${dbErr.message}"
+Failed Query: "${generatedCypher}"
+
+Fix this query for FalkorDB openCypher:
+- CRITICAL: NEVER use 'EXISTS { MATCH ... }' or '{ MATCH ... }' subquery blocks! FalkorDB does NOT support subqueries. Use 'OPTIONAL MATCH ... WITH ... WHERE var IS NULL' instead.
+- Output strictly JSON: { "cypher": "FIXED_CYPHER" }`;
+
+      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+      const repairModel = genAI.getGenerativeModel({
+        model: "gemini-3.8-flash",
+        generationConfig: { responseMimeType: "application/json" },
+      });
+      const repairRes = await repairModel.generateContent(repairPrompt);
+      const parsedRepair = JSON.parse(repairRes.response.text());
+      if (parsedRepair.cypher) {
+        generatedCypher = parsedRepair.cypher;
+        const retryRes = await executeCypher(generatedCypher);
+        graphResult = retryRes.data;
+        executionMs = retryRes.durationMs;
+        modelUsed += " + Auto-Repaired";
+      } else {
+        throw dbErr;
+      }
+    } catch (repairErr: any) {
+      console.error("Auto-repair also failed:", repairErr.message);
+      return {
+        answer: `The generated graph query encountered an execution error in FalkorDB: ${dbErr.message}`,
+        cypher: generatedCypher,
+        executionMs: 0,
+        modelUsed,
+        graphData: [],
+      };
+    }
   }
 
   // Step 3: Synthesize Answer Grounded in Real Graph Data (Zero Hallucination)
@@ -128,7 +184,7 @@ Instructions:
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
     const completion = await groq.chat.completions.create({
       messages: [{ role: "user", content: synthesisPrompt }],
-      model: "qwen/qwen3.8-27b",
+      model: "llama-3.3-70b-versatile",
       max_tokens: 300,
     });
     naturalAnswer = completion.choices[0]?.message?.content?.trim() || "";
