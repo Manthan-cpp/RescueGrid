@@ -160,32 +160,32 @@ graph TD
     classDef shelter fill:#14532d,stroke:#22c55e,stroke-width:2px,color:#fff;
     classDef log fill:#581c87,stroke:#a855f7,stroke-width:2px,color:#fff;
 
-    CR[CrisisRoom: Wayanad Command]:::room
-    L1[Location: Chooralmala Ground Zero]:::loc
-    L2[Location: Mundakkai Cutoff]:::loc
-    L3[Location: Meppadi Staging Hub]:::loc
+    CR["CrisisRoom: Wayanad Command"]:::room
+    L1["Location: Chooralmala Ground Zero"]:::loc
+    L2["Location: Mundakkai Cutoff"]:::loc
+    L3["Location: Meppadi Staging Hub"]:::loc
     
-    SOS[SOSRequest: 5 Trapped on Roof]:::sos
-    RES[Resource: NDRF Inflatable Craft 04]:::res
-    AG[Agency: NDRF 4th Battalion]:::agency
-    SH[Shelter: Meppadi Community Camp]:::shelter
-    AL[AgentLog: Gemini Flash Reasoning Trail]:::log
+    SOS["SOSRequest: 5 Trapped on Roof"]:::sos
+    RES["Resource: NDRF Inflatable Craft 04"]:::res
+    AG["Agency: NDRF 4th Battalion"]:::agency
+    SH["Shelter: Meppadi Community Camp"]:::shelter
+    AL["AgentLog: Gemini Flash Reasoning Trail"]:::log
 
-    CR -->|:HAS_ZONE| L1
-    CR -->|:HAS_ZONE| L2
-    CR -->|:HAS_ZONE| L3
-    CR -->|:HAS_AGENT_LOG| AL
+    CR -->|":HAS_ZONE"| L1
+    CR -->|":HAS_ZONE"| L2
+    CR -->|":HAS_ZONE"| L3
+    CR -->|":HAS_AGENT_LOG"| AL
 
-    L1 -->|:CONNECTED_BY {status: 'blocked'}| L2
-    L1 -->|:CONNECTED_BY {status: 'clear'}| L3
+    L1 -.->|":CONNECTED_BY (blocked)"| L2
+    L1 -->|":CONNECTED_BY (clear)"| L3
 
-    SOS -->|:LOCATED_IN| L1
-    SOS -->|:ASSIGNED_TO {reasoning, assigned_at}| RES
+    SOS -->|":LOCATED_IN"| L1
+    SOS -->|":ASSIGNED_TO"| RES
     
-    RES -->|:LOCATED_IN| L3
-    RES -->|:OWNED_BY| AG
+    RES -->|":LOCATED_IN"| L3
+    RES -->|":OWNED_BY"| AG
     
-    SH -->|:LOCATED_IN| L3
+    SH -->|":LOCATED_IN"| L3
 ```
 
 ### Graph Nodes Ontology
