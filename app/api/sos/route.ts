@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { createSOS } from "@/lib/graph";
+import { createSOS, createAgentLog } from "@/lib/graph";
 import { runDispatchAgent } from "@/agents/dispatch";
-import { SOSRequest } from "@/lib/types";
+import { SOSRequest, AgentLogEntry } from "@/lib/types";
 
 export async function POST(req: Request) {
   try {
@@ -32,6 +32,27 @@ export async function POST(req: Request) {
 
     // 2. Trigger Dispatch Agent (Gemini Flash judgment & graph writeback)
     const dispatchResult = await runDispatchAgent(newSOS, roomId || "default");
+
+    // 3. Persist Agent Activity Log directly linked to this crisis room in FalkorDB
+    if (dispatchResult && roomId) {
+      const logEntry: AgentLogEntry = {
+        id: `log-${Date.now()}`,
+        timestamp: newSOS.timestamp,
+        agent: "Dispatch Agent",
+        action: dispatchResult.assigned
+          ? `Assigned ${dispatchResult.resourceName} to ${sosId}`
+          : `Queued ${sosId} (Resource Deficit)`,
+        reasoning: dispatchResult.reasoning,
+        model_used: dispatchResult.modelUsed,
+        status: dispatchResult.status,
+        sos_id: sosId,
+        resource_id: dispatchResult.resourceId,
+        roomId,
+      };
+      await createAgentLog(roomId, logEntry).catch((err) =>
+        console.error("Failed to persist AgentLog:", err)
+      );
+    }
 
     return NextResponse.json({
       success: true,

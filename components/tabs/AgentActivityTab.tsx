@@ -135,8 +135,12 @@ export function AgentActivityTab({ logs }: AgentActivityTabProps) {
             </div>
           ))
         ) : (
-          <div className="bg-white border border-gray-200 rounded-lg p-12 text-center text-gray-400">
-            No agent logs found.
+          <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
+            <Sparkles className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+            <h4 className="text-sm font-semibold text-gray-800">No Agent Dispatches Recorded</h4>
+            <p className="text-xs text-gray-400 max-w-sm mx-auto mt-1">
+              Autonomous Dispatch Agent reasoning trails and graph traversal records will be logged here as emergency requests arrive.
+            </p>
           </div>
         )}
       </div>

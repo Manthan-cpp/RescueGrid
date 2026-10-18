@@ -44,13 +44,30 @@ CRITICAL FALKORDB / OPENCYPHER RULES:
 2. NEVER use 'EXISTS { MATCH ... }' or '{ MATCH ... }' subquery blocks! FalkorDB does NOT support subquery blocks and will throw a syntax error.
 3. To test absence of a node or relationship, use 'OPTIONAL MATCH ... WITH ... WHERE var IS NULL'.
 4. Do NOT use Neo4j-specific functions like datetime(), date(), or apoc.*.
-5. If filtering by room: ${roomId ? `MATCH (cr:CrisisRoom { id: '${roomId}' })-[:HAS_ZONE]->(loc:Location)` : "MATCH (loc:Location)"}
-6. Output STRICT JSON only. Format:
+5. CASE-INSENSITIVE PARTIAL MATCHING: When filtering by entity names (resources, wards, sectors, agencies), NEVER use exact '=' matching like { name: 'Fisherfolk Skiff' } or { name: 'Chooralmala' }! ALWAYS use case-insensitive partial matching with 'toLower(x.name) CONTAINS "..."' so natural speech like "Fisherfolk Skiff" matches "Fisherfolk Rescue Skiff Sagar-01" and "Chooralmala" matches "Chooralmala Ground Zero".
+6. AVAILABILITY & ASSIGNMENTS: When asked if a resource is available, ALWAYS check both 'r.status' and 'OPTIONAL MATCH (s:SOSRequest)-[:ASSIGNED_TO]->(r)' so you can report which SOS it is currently assigned to if busy.
+7. If filtering by room: ${roomId ? `MATCH (cr:CrisisRoom { id: '${roomId}' })-[:HAS_ZONE]->(loc:Location)` : "MATCH (loc:Location)"}
+8. Output STRICT JSON only. Format:
 {
   "cypher": "MATCH ... RETURN ..."
 }
 
 FEW-SHOT EXAMPLES:
+Question: "Is the Fisherfolk Skiff in Chooralmala currently available?"
+Cypher:
+MATCH (r:Resource)-[:LOCATED_IN]->(loc:Location)
+WHERE (toLower(r.name) CONTAINS 'fisherfolk' OR toLower(r.name) CONTAINS 'skiff')
+  AND toLower(loc.name) CONTAINS 'chooralmala'
+OPTIONAL MATCH (sos:SOSRequest)-[:ASSIGNED_TO]->(r)
+RETURN r.name AS resource_name, r.type AS type, r.status AS status, loc.name AS location_name, sos.id AS assigned_to_sos, sos.description AS emergency_details
+
+Question: "How many rescue boats are currently available at Meppadi?"
+Cypher:
+MATCH (r:Resource { type: 'boat' })-[:LOCATED_IN]->(loc:Location)
+WHERE toLower(loc.name) CONTAINS 'meppadi'
+OPTIONAL MATCH (sos:SOSRequest)-[:ASSIGNED_TO]->(r)
+RETURN r.name AS resource_name, r.status AS status, loc.name AS staging_location, sos.id AS assigned_sos
+
 Question: "Which wards currently have open critical SOS requests and no boats nearby?"
 Cypher:
 MATCH (loc:Location)<-[:LOCATED_IN]-(sos:SOSRequest)
@@ -63,7 +80,7 @@ RETURN loc.name AS ward_name, sos.id AS sos_id, sos.description AS emergency, so
 Question: "What is the remaining shelter bed capacity in Kalpetta and Vythiri?"
 Cypher:
 MATCH (s:Shelter)
-WHERE s.name CONTAINS 'Kalpetta' OR s.name CONTAINS 'Vythiri'
+WHERE toLower(s.name) CONTAINS 'kalpetta' OR toLower(s.name) CONTAINS 'vythiri'
 RETURN s.name AS shelter, s.capacity AS total_capacity, s.current_occupancy AS occupancy, (s.capacity - s.current_occupancy) AS available_beds
 
 Question: "List all available ambulances and their current staging locations"
@@ -77,7 +94,7 @@ MATCH (l1:Location)-[r:CONNECTED_BY { status: 'blocked' }]->(l2:Location)
 RETURN l1.name AS from_sector, l2.name AS to_sector, r.status AS route_status`;
 
   let generatedCypher = "";
-  let modelUsed = "Groq LLaMA 3.3";
+  let modelUsed = "Groq (Qwen / LLaMA)";
 
   // Step 1: Generate Cypher using Groq (Fast) with Gemini fallback
   try {
@@ -87,12 +104,12 @@ RETURN l1.name AS from_sector, l2.name AS to_sector, r.status AS route_status`;
         { role: "system", content: systemPrompt },
         { role: "user", content: `Question: "${userQuestion}"` },
       ],
-      model: "llama-3.3-70b-versatile",
+      model: "qwen/qwen3.8-27b",
       response_format: { type: "json_object" },
     });
     const parsed = JSON.parse(completion.choices[0]?.message?.content || "{}");
     generatedCypher = parsed.cypher || "";
-    modelUsed = "Groq (LLaMA 3.3)";
+    modelUsed = "Groq (Qwen / LLaMA)";
   } catch (err: any) {
     console.warn("Groq failed for Query Agent, falling back to Gemini:", err.message);
     try {
@@ -184,7 +201,7 @@ Instructions:
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
     const completion = await groq.chat.completions.create({
       messages: [{ role: "user", content: synthesisPrompt }],
-      model: "llama-3.3-70b-versatile",
+      model: "qwen/qwen3.8-27b",
       max_tokens: 300,
     });
     naturalAnswer = completion.choices[0]?.message?.content?.trim() || "";

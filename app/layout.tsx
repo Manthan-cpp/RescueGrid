@@ -4,6 +4,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "RescueGrid — Crisis Coordination & Live Graph Brain",
   description: "Disaster-response coordination platform powered by FalkorDB, Gemini, and Groq.",
+  icons: {
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({

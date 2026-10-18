@@ -297,28 +297,38 @@ export function OverviewTab({
             </p>
 
             <div className="space-y-3">
-              {agentLogs.slice(0, 3).map((log) => (
-                <div
-                  key={log.id}
-                  className="p-3 rounded-md border border-gray-200 bg-gray-50/60 text-xs space-y-1.5"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-gray-900 font-mono">
-                      {log.action}
-                    </span>
-                    <span className="text-[11px] text-gray-400 font-mono">
-                      {log.timestamp}
-                    </span>
+              {agentLogs.length > 0 ? (
+                agentLogs.slice(0, 3).map((log) => (
+                  <div
+                    key={log.id}
+                    className="p-3 rounded-md border border-gray-200 bg-gray-50/60 text-xs space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-gray-900 font-mono">
+                        {log.action}
+                      </span>
+                      <span className="text-[11px] text-gray-400 font-mono">
+                        {log.timestamp}
+                      </span>
+                    </div>
+                    <p className="text-gray-600 line-clamp-2 leading-relaxed">
+                      {log.reasoning}
+                    </p>
+                    <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1 border-t border-gray-200/60 font-mono">
+                      <span>{log.model_used}</span>
+                      <span className="text-emerald-600 font-semibold">Graph Verified</span>
+                    </div>
                   </div>
-                  <p className="text-gray-600 line-clamp-2 leading-relaxed">
-                    {log.reasoning}
+                ))
+              ) : (
+                <div className="p-4 rounded-md border border-dashed border-gray-200 text-center text-xs text-gray-400 bg-gray-50/40">
+                  <Sparkles className="w-4 h-4 mx-auto mb-1.5 text-gray-400" />
+                  <p className="font-medium text-gray-600">Zero Autonomous Actions Yet</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    Dispatch Agent will evaluate graph paths and record decisions in real time once an SOS is broadcasted.
                   </p>
-                  <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1 border-t border-gray-200/60 font-mono">
-                    <span>{log.model_used}</span>
-                    <span className="text-emerald-600 font-semibold">Graph Verified</span>
-                  </div>
                 </div>
-              ))}
+              )}
             </div>
           </div>
 

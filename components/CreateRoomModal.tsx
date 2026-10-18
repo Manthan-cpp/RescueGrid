@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Image from "next/image";
 import { X, Building2, MapPin, Layers } from "lucide-react";
 import { CrisisRoom } from "@/lib/types";
 
@@ -40,10 +41,16 @@ export function CreateRoomModal({ isOpen, onClose, onCreate }: CreateRoomModalPr
       <div className="bg-white rounded-lg border border-gray-200 shadow-xl max-w-md w-full overflow-hidden">
         {/* Modal Header */}
         <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Building2 className="w-5 h-5 text-gray-700" />
-            <h3 className="text-base font-bold text-gray-900">
-              Create New Crisis Room
+          <div className="flex items-center space-x-3">
+            <Image
+              src="/logo.png"
+              alt="RescueGrid Logo"
+              width={110}
+              height={28}
+              className="h-6 w-auto object-contain"
+            />
+            <h3 className="text-sm font-bold text-gray-900 border-l border-gray-200 pl-3">
+              Initialize Crisis Room
             </h3>
           </div>
           <button

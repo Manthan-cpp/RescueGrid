@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import Image from "next/image";
 import {
   ShieldAlert,
   Building2,
@@ -100,6 +101,7 @@ export default function Home() {
         setResources(data.resources || []);
         setSosRequests(data.sosRequests || []);
         setGraphData(data.graphData || { nodes: [], edges: [] });
+        setAgentLogs(data.agentLogs || []);
       }
     } catch (err: any) {
       console.error("Failed to fetch room details:", err);
@@ -117,6 +119,9 @@ export default function Home() {
   useEffect(() => {
     if (currentRoom) {
       fetchRoomDetails(currentRoom.id);
+    } else {
+      setAgentLogs([]);
+      setChatMessages([]);
     }
   }, [currentRoom, fetchRoomDetails]);
 
@@ -132,6 +137,8 @@ export default function Home() {
       const data = await res.json();
       if (data.success && data.room) {
         setRooms((prev) => [data.room, ...prev]);
+        setAgentLogs([]);
+        setChatMessages([]);
         setCurrentRoom(data.room);
         setActiveTab("overview");
       }
@@ -389,12 +396,10 @@ export default function Home() {
           sos_id: ev.sos.id,
           resource_id: ev.dispatch.resourceId,
         }));
-        setAgentLogs((prev) => [...newLogs, ...prev]);
-
-        // Refresh room details if room is currently selected
         if (currentRoom) {
           await fetchRoomDetails(currentRoom.id);
         } else {
+          setAgentLogs([]);
           await fetchRooms();
         }
       }
@@ -410,8 +415,17 @@ export default function Home() {
     return (
       <div className="min-h-screen bg-[#F7F7F5] flex flex-col items-center justify-center p-4">
         <div className="bg-white border border-red-300 rounded-lg p-6 max-w-md w-full shadow-md text-center">
-          <AlertCircle className="w-10 h-10 text-red-600 mx-auto mb-3" />
-          <h2 className="text-lg font-bold text-gray-900">FalkorDB Connection Notice</h2>
+          <Image
+            src="/logo.png"
+            alt="RescueGrid Logo"
+            width={160}
+            height={44}
+            className="h-10 w-auto mx-auto mb-3 object-contain"
+          />
+          <div className="flex items-center justify-center space-x-1.5 text-red-600 mb-1">
+            <AlertCircle className="w-4 h-4" />
+            <h2 className="text-base font-bold text-gray-900">FalkorDB Connection Notice</h2>
+          </div>
           <p className="text-xs text-gray-600 mt-2 leading-relaxed">
             {errorMessage}
           </p>
@@ -449,19 +463,39 @@ export default function Home() {
           onSelectRole={(r) => setUserRole(r)}
           onOpenCreateModal={() => setIsCreateModalOpen(true)}
         />
-        <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-10">
-          <div className="flex items-center justify-between mb-8 pb-4 border-b border-gray-200">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
-                Crisis Command Rooms
-              </h1>
-              <p className="text-sm text-gray-500 mt-1">
-                Connected to live FalkorDB instance. Select an active crisis room or create one.
-              </p>
+        <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-8">
+          <div className="bg-white border border-gray-200 rounded-xl p-6 sm:p-7 shadow-sm mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="flex items-center space-x-5">
+              <Image
+                src="/logo.png"
+                alt="RescueGrid Logo"
+                width={180}
+                height={55}
+                priority
+                className="h-12 md:h-14 w-auto object-contain flex-shrink-0"
+              />
+              <div className="border-l border-gray-200 pl-5">
+                <div className="flex items-center space-x-2">
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 font-mono">
+                    COMMAND HEADQUARTERS
+                  </span>
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 uppercase font-mono flex items-center">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" />
+                    Live Graph Active
+                  </span>
+                </div>
+                <h1 className="text-xl md:text-2xl font-bold text-gray-950 mt-1">
+                  Crisis Coordination Brain
+                </h1>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Autonomous multi-agent resource dispatch over live graph topology powered by FalkorDB.
+                </p>
+              </div>
             </div>
+
             <button
               onClick={() => setIsCreateModalOpen(true)}
-              className="inline-flex items-center px-4 py-2 text-xs font-semibold rounded-md bg-gray-900 text-white hover:bg-gray-800 transition-colors shadow-sm"
+              className="inline-flex items-center justify-center px-4 py-2.5 text-xs font-semibold rounded-md bg-gray-900 text-white hover:bg-gray-800 transition-colors shadow-sm whitespace-nowrap self-start md:self-center"
             >
               <Plus className="w-4 h-4 mr-1.5" />
               Create Crisis Room
@@ -474,6 +508,8 @@ export default function Home() {
                 <div
                   key={room.id}
                   onClick={() => {
+                    setAgentLogs([]);
+                    setChatMessages([]);
                     setCurrentRoom(room);
                     setActiveTab("overview");
                   }}
@@ -523,7 +559,13 @@ export default function Home() {
             </div>
           ) : (
             <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
-              <Building2 className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <Image
+                src="/logo.png"
+                alt="RescueGrid Logo"
+                width={180}
+                height={55}
+                className="h-12 w-auto mx-auto mb-4 object-contain opacity-80"
+              />
               <h3 className="text-base font-bold text-gray-900">No Crisis Rooms Active</h3>
               <p className="text-xs text-gray-500 max-w-sm mx-auto mt-1 mb-4">
                 FalkorDB currently has zero crisis rooms. Initialize the first crisis zone to seed initial wards and emergency infrastructure.
@@ -574,7 +616,11 @@ export default function Home() {
         userRole={userRole}
         onSelectRole={(r) => setUserRole(r)}
         onOpenCreateModal={() => setIsCreateModalOpen(true)}
-        onBackToRooms={() => setCurrentRoom(null)}
+        onBackToRooms={() => {
+          setCurrentRoom(null);
+          setAgentLogs([]);
+          setChatMessages([]);
+        }}
         onOpenNewSOSModal={() => setIsSOSModalOpen(true)}
       />
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { getCrisisRooms, createCrisisRoom, createSOS, getGraph } from "@/lib/graph";
+import { getCrisisRooms, createCrisisRoom, createSOS, createAgentLog, getGraph } from "@/lib/graph";
 import { runDispatchAgent } from "@/agents/dispatch";
-import { CrisisRoom, SOSRequest } from "@/lib/types";
+import { CrisisRoom, SOSRequest, AgentLogEntry } from "@/lib/types";
 
 export async function POST(req: Request) {
   try {
@@ -48,8 +48,28 @@ export async function POST(req: Request) {
       location_name: wards[0]?.name || "Sector 1 Lower Basin",
       people_count: 4,
     };
-    await createSOS(sos1);
+    await createSOS(sos1, roomId);
     const dispatch1 = await runDispatchAgent(sos1, roomId);
+
+    if (dispatch1 && roomId) {
+      const log1: AgentLogEntry = {
+        id: `log-${Date.now()}-${sos1.id}`,
+        timestamp: sos1.timestamp,
+        agent: "Dispatch Agent",
+        action: dispatch1.assigned
+          ? `Assigned ${dispatch1.resourceName} to ${sos1.id}`
+          : `Queued ${sos1.id} (Deficit Alert)`,
+        reasoning: dispatch1.reasoning,
+        model_used: dispatch1.modelUsed,
+        status: dispatch1.status,
+        sos_id: sos1.id,
+        resource_id: dispatch1.resourceId,
+        roomId,
+      };
+      await createAgentLog(roomId, log1).catch((err) =>
+        console.error("Failed to persist simulation log 1:", err)
+      );
+    }
 
     // 4. Ingest Scenario Incident 2 (Day 3: Second wave mudslide testing memory & depleted assets)
     const sos2: SOSRequest = {
@@ -62,8 +82,28 @@ export async function POST(req: Request) {
       location_name: wards[1]?.name || "Bridge Crossing East",
       people_count: 6,
     };
-    await createSOS(sos2);
+    await createSOS(sos2, roomId);
     const dispatch2 = await runDispatchAgent(sos2, roomId);
+
+    if (dispatch2 && roomId) {
+      const log2: AgentLogEntry = {
+        id: `log-${Date.now()}-${sos2.id}`,
+        timestamp: sos2.timestamp,
+        agent: "Dispatch Agent",
+        action: dispatch2.assigned
+          ? `Assigned ${dispatch2.resourceName} to ${sos2.id}`
+          : `Queued ${sos2.id} (Deficit Alert)`,
+        reasoning: dispatch2.reasoning,
+        model_used: dispatch2.modelUsed,
+        status: dispatch2.status,
+        sos_id: sos2.id,
+        resource_id: dispatch2.resourceId,
+        roomId,
+      };
+      await createAgentLog(roomId, log2).catch((err) =>
+        console.error("Failed to persist simulation log 2:", err)
+      );
+    }
 
     return NextResponse.json({
       success: true,

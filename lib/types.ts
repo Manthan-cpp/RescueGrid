@@ -109,6 +109,7 @@ export interface AgentLogEntry {
   status: "success" | "warning" | "error";
   sos_id?: string;
   resource_id?: string;
+  roomId?: string;
 }
 
 export interface ChatMessage {

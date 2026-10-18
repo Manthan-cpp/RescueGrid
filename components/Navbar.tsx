@@ -1,7 +1,7 @@
 "use client";
 
-import React from "react";
-import { ShieldAlert, Plus, Radio, ArrowLeft, Users, Shield } from "lucide-react";
+import Image from "next/image";
+import { Plus, Radio, ArrowLeft, Users, Shield } from "lucide-react";
 import { CrisisRoom, UserRole } from "@/lib/types";
 
 interface NavbarProps {
@@ -25,7 +25,7 @@ export function Navbar({
     <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         {/* Brand & Room Info */}
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-3">
           {currentRoom && onBackToRooms ? (
             <button
               onClick={onBackToRooms}
@@ -36,18 +36,24 @@ export function Navbar({
             </button>
           ) : null}
 
-          <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-md bg-red-600 flex items-center justify-center text-white font-bold shadow-sm">
-              <ShieldAlert className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="font-bold text-gray-950 text-base tracking-tight">
-                RescueGrid
-              </span>
-              <span className="hidden sm:inline-block ml-2 text-xs font-mono font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200">
-                FalkorDB Brain
-              </span>
-            </div>
+          <div
+            onClick={onBackToRooms && currentRoom ? onBackToRooms : undefined}
+            className={`flex items-center space-x-2 ${
+              onBackToRooms && currentRoom ? "cursor-pointer group" : ""
+            }`}
+            title={currentRoom ? "Back to All Crisis Rooms" : undefined}
+          >
+            <Image
+              src="/logo.png"
+              alt="RescueGrid Logo"
+              width={160}
+              height={40}
+              priority
+              className="h-8 md:h-9 w-auto object-contain transition-transform group-hover:scale-105"
+            />
+            <span className="hidden sm:inline-block text-[11px] font-mono font-semibold px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200">
+              FalkorDB Brain
+            </span>
           </div>
 
           {currentRoom && (

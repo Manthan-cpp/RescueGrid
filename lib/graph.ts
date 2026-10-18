@@ -8,6 +8,7 @@ import {
   WardLocation,
   RouteStatus,
   Agency,
+  AgentLogEntry,
   GraphData,
   GraphNode,
   GraphEdge,
@@ -495,9 +496,46 @@ export async function deleteCrisisRoom(roomId: string): Promise<void> {
     MATCH (cr:CrisisRoom { id: $roomId })
     OPTIONAL MATCH (cr)-[:HAS_ZONE]->(loc:Location)
     OPTIONAL MATCH (loc)<-[:LOCATED_IN]-(item)
-    DETACH DELETE cr, loc, item
+    OPTIONAL MATCH (cr)-[:HAS_AGENT_LOG]->(al:AgentLog)
+    DETACH DELETE cr, loc, item, al
   `;
   await graph.query(cypher, { params: { roomId } });
+}
+
+export async function createAgentLog(roomId: string, log: AgentLogEntry): Promise<void> {
+  const graph = await getGraph();
+  const cypher = `
+    MATCH (room:CrisisRoom { id: $roomId })
+    CREATE (al:AgentLog {
+      id: $id,
+      timestamp: $timestamp,
+      agent: $agent,
+      action: $action,
+      reasoning: $reasoning,
+      model_used: $model_used,
+      status: $status,
+      sos_id: $sos_id,
+      resource_id: $resource_id,
+      created_at: $created_at
+    })
+    MERGE (room)-[:HAS_AGENT_LOG]->(al)
+    RETURN al
+  `;
+  await graph.query(cypher, {
+    params: {
+      roomId,
+      id: log.id,
+      timestamp: log.timestamp,
+      agent: log.agent,
+      action: log.action,
+      reasoning: log.reasoning,
+      model_used: log.model_used,
+      status: log.status,
+      sos_id: log.sos_id || "",
+      resource_id: log.resource_id || "",
+      created_at: new Date().toISOString(),
+    },
+  });
 }
 
 // -------------------------------------------------------------
@@ -671,6 +709,51 @@ export async function getRoomDetails(roomId: string) {
     assigned_resource_name: row.assigned_resource_name,
   }));
 
+  // Agent Logs scoped to this room
+  const logsRes = await graph.query(
+    `MATCH (cr:CrisisRoom { id: $roomId })-[:HAS_AGENT_LOG]->(al:AgentLog)
+     RETURN al ORDER BY al.created_at DESC`,
+    { params: { roomId } }
+  );
+  let agentLogs: AgentLogEntry[] = (logsRes.data || []).map((row: any) => {
+    const props = row.al.properties || row.al;
+    return {
+      id: props.id,
+      timestamp: props.timestamp,
+      agent: props.agent,
+      action: props.action,
+      reasoning: props.reasoning,
+      model_used: props.model_used,
+      status: props.status,
+      sos_id: props.sos_id || undefined,
+      resource_id: props.resource_id || undefined,
+      roomId,
+    };
+  });
+
+  // If no explicit AgentLog nodes exist yet, check if there are assignments in this room
+  if (agentLogs.length === 0) {
+    const assignRes = await graph.query(
+      `MATCH (cr:CrisisRoom { id: $roomId })-[:HAS_ZONE]->(w:Location)<-[:LOCATED_IN]-(s:SOSRequest)-[a:ASSIGNED_TO]->(r:Resource)
+       RETURN s.id as sos_id, r.id as res_id, r.name as res_name, a.reasoning as reasoning, a.assigned_at as timestamp`,
+      { params: { roomId } }
+    );
+    if (assignRes.data && assignRes.data.length > 0) {
+      agentLogs = assignRes.data.map((row: any) => ({
+        id: `log-falkordb-${row.sos_id}`,
+        timestamp: row.timestamp ? new Date(row.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Dispatched",
+        agent: "Dispatch Agent" as const,
+        action: `Assigned ${row.res_name} to ${row.sos_id}`,
+        reasoning: row.reasoning || "Assigned via FalkorDB graph path.",
+        model_used: "Gemini 1.5 Flash" as const,
+        status: "success" as const,
+        sos_id: row.sos_id,
+        resource_id: row.res_id,
+        roomId,
+      }));
+    }
+  }
+
   // Full Graph
   const graphData = await getFullGraphData(roomId);
 
@@ -679,6 +762,7 @@ export async function getRoomDetails(roomId: string) {
     shelters,
     resources,
     sosRequests,
+    agentLogs,
     graphData,
   };
 }
