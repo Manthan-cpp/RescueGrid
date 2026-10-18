@@ -3,8 +3,10 @@ import {
   CrisisRoom,
   SOSRequest,
   Resource,
+  ResourceStatus,
   Shelter,
   WardLocation,
+  RouteStatus,
   Agency,
   GraphData,
   GraphNode,
@@ -277,7 +279,11 @@ export async function addResource(res: Resource, roomId?: string): Promise<void>
       r.name = $name,
       r.type = $type,
       r.status = $status,
-      r.capacity = $capacity
+      r.capacity = $capacity,
+      r.contact_phone = $contact_phone,
+      r.notes = $notes,
+      r.lat = $lat,
+      r.lng = $lng
     MERGE (r)-[:LOCATED_IN]->(loc)
     RETURN r
   `;
@@ -287,6 +293,75 @@ export async function addResource(res: Resource, roomId?: string): Promise<void>
       ...res,
       location_name: res.location_name || res.location_id,
       capacity: Number(res.capacity) || 1,
+      contact_phone: res.contact_phone || "",
+      notes: res.notes || "",
+      lat: Number(res.lat) || 0,
+      lng: Number(res.lng) || 0,
+    } as any,
+  });
+
+  // Link to Agency if provided
+  if (res.agency_name || res.agency_id) {
+    const agencyId = res.agency_id || `agency-${(res.agency_name || "vol").toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
+    const agencyName = res.agency_name || "Emergency Response Team";
+    await graph.query(
+      `MATCH (r:Resource { id: $resId })
+       MERGE (ag:Agency { id: $agencyId })
+       ON CREATE SET ag.name = $agencyName, ag.type = 'NGO'
+       MERGE (r)-[:OWNED_BY]->(ag)`,
+      { params: { resId: res.id, agencyId, agencyName } }
+    );
+  }
+
+  if (roomId) {
+    await graph.query(
+      `MATCH (cr:CrisisRoom { id: $roomId }), (loc:Location { id: $location_id })
+       MERGE (cr)-[:HAS_ZONE]->(loc)`,
+      { params: { roomId, location_id: res.location_id } }
+    );
+  }
+}
+
+export async function updateResourceStatus(resourceId: string, status: ResourceStatus): Promise<void> {
+  const graph = await getGraph();
+  await graph.query(
+    `MATCH (r:Resource { id: $resourceId })
+     SET r.status = $status
+     RETURN r`,
+    { params: { resourceId, status } }
+  );
+}
+
+export async function addShelter(shelter: Shelter, roomId?: string): Promise<void> {
+  const graph = await getGraph();
+  const cypher = `
+    MERGE (loc:Location { id: $location_id })
+    ON CREATE SET loc.name = $location_name, loc.accessibility_status = 'accessible'
+    MERGE (s:Shelter { id: $id })
+    ON CREATE SET
+      s.name = $name,
+      s.capacity = $capacity,
+      s.current_occupancy = $current_occupancy,
+      s.has_medical = $has_medical,
+      s.has_generator = $has_generator,
+      s.contact_phone = $contact_phone,
+      s.lat = $lat,
+      s.lng = $lng
+    MERGE (s)-[:LOCATED_IN]->(loc)
+    RETURN s
+  `;
+
+  await graph.query(cypher, {
+    params: {
+      ...shelter,
+      location_name: shelter.location_name || shelter.location_id,
+      capacity: Number(shelter.capacity) || 50,
+      current_occupancy: Number(shelter.current_occupancy) || 0,
+      has_medical: Boolean(shelter.has_medical),
+      has_generator: Boolean(shelter.has_generator),
+      contact_phone: shelter.contact_phone || "",
+      lat: Number(shelter.lat) || 0,
+      lng: Number(shelter.lng) || 0,
     } as any,
   });
 
@@ -294,7 +369,87 @@ export async function addResource(res: Resource, roomId?: string): Promise<void>
     await graph.query(
       `MATCH (cr:CrisisRoom { id: $roomId }), (loc:Location { id: $location_id })
        MERGE (cr)-[:HAS_ZONE]->(loc)`,
-      { params: { roomId, location_id: res.location_id } }
+      { params: { roomId, location_id: shelter.location_id } }
+    );
+  }
+}
+
+export async function updateShelterOccupancy(shelterId: string, current_occupancy: number): Promise<void> {
+  const graph = await getGraph();
+  await graph.query(
+    `MATCH (s:Shelter { id: $shelterId })
+     SET s.current_occupancy = $current_occupancy
+     RETURN s`,
+    { params: { shelterId, current_occupancy: Math.max(0, current_occupancy) } }
+  );
+}
+
+export async function reportRoadHazard(
+  fromLocId: string,
+  toLocId: string,
+  status: RouteStatus,
+  notes?: string,
+  roomId?: string
+): Promise<void> {
+  const graph = await getGraph();
+  
+  // 1. Create or update directional road route
+  const cypher = `
+    MERGE (l1:Location { id: $fromLocId })
+    MERGE (l2:Location { id: $toLocId })
+    MERGE (l1)-[r:CONNECTED_BY]->(l2)
+    SET r.status = $status, r.notes = $notes, r.last_updated = $timestamp
+    RETURN r
+  `;
+
+  await graph.query(cypher, {
+    params: {
+      fromLocId,
+      toLocId,
+      status,
+      notes: notes || "",
+      timestamp: new Date().toISOString(),
+    },
+  });
+
+  // 2. Also update reverse route for bidirectional consistency
+  await graph.query(
+    `MATCH (l1:Location { id: $fromLocId }), (l2:Location { id: $toLocId })
+     MERGE (l2)-[r:CONNECTED_BY]->(l1)
+     SET r.status = $status, r.notes = $notes, r.last_updated = $timestamp`,
+    {
+      params: {
+        fromLocId,
+        toLocId,
+        status,
+        notes: notes || "",
+        timestamp: new Date().toISOString(),
+      },
+    }
+  );
+
+  // 3. If route is blocked or flooded, update the destination location's accessibility status
+  if (status === "blocked" || status === "restricted") {
+    await graph.query(
+      `MATCH (loc:Location { id: $toLocId })
+       SET loc.accessibility_status = 'blocked'`,
+      { params: { toLocId } }
+    );
+  } else if (status === "clear") {
+    await graph.query(
+      `MATCH (loc:Location { id: $toLocId })
+       SET loc.accessibility_status = 'accessible'`,
+      { params: { toLocId } }
+    );
+  }
+
+  // 4. Link locations to room if provided
+  if (roomId) {
+    await graph.query(
+      `MATCH (cr:CrisisRoom { id: $roomId }), (l1:Location { id: $fromLocId }), (l2:Location { id: $toLocId })
+       MERGE (cr)-[:HAS_ZONE]->(l1)
+       MERGE (cr)-[:HAS_ZONE]->(l2)`,
+      { params: { roomId, fromLocId, toLocId } }
     );
   }
 }

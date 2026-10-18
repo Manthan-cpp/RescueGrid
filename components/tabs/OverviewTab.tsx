@@ -10,6 +10,7 @@ import {
   Route as RouteIcon,
   Clock,
   Sparkles,
+  Plus,
 } from "lucide-react";
 import {
   SOSRequest,
@@ -27,6 +28,8 @@ interface OverviewTabProps {
   agentLogs: AgentLogEntry[];
   onNavigateTab: (tab: string) => void;
   onOpenSOSModal: () => void;
+  onOpenAddShelterModal?: () => void;
+  onOpenReportHazardModal?: () => void;
 }
 
 export function OverviewTab({
@@ -37,6 +40,8 @@ export function OverviewTab({
   agentLogs,
   onNavigateTab,
   onOpenSOSModal,
+  onOpenAddShelterModal,
+  onOpenReportHazardModal,
 }: OverviewTabProps) {
   const openCount = sosRequests.filter((s) => s.status === "open").length;
   const criticalCount = sosRequests.filter((s) => s.urgency === "critical" && s.status !== "resolved").length;
@@ -127,48 +132,64 @@ export function OverviewTab({
         </div>
 
         {/* Shelter Occupancy */}
-        <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-              Shelter Bed Capacity
-            </span>
-            <Building className="w-4 h-4 text-emerald-600" />
-          </div>
-          <div className="mt-2 flex items-baseline space-x-2">
-            <span className="text-3xl font-bold text-gray-900 font-mono">
-              {remainingBeds}
-            </span>
-            <span className="text-xs text-gray-500">
-              beds available
-            </span>
+        <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                Shelter Bed Capacity
+              </span>
+              <Building className="w-4 h-4 text-emerald-600" />
+            </div>
+            <div className="mt-2 flex items-baseline space-x-2">
+              <span className="text-3xl font-bold text-gray-900 font-mono">
+                {remainingBeds}
+              </span>
+              <span className="text-xs text-gray-500">
+                beds available
+              </span>
+            </div>
           </div>
           <div className="mt-3 flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-100">
-            <span>Total Occupancy: {totalShelterOcc} / {totalShelterCap}</span>
-            <span className="font-mono text-gray-700">
-              {Math.round((totalShelterOcc / (totalShelterCap || 1)) * 100)}%
-            </span>
+            <span>Occ: {totalShelterOcc}/{totalShelterCap} ({Math.round((totalShelterOcc / (totalShelterCap || 1)) * 100)}%)</span>
+            {onOpenAddShelterModal && (
+              <button
+                onClick={onOpenAddShelterModal}
+                className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200"
+              >
+                + Add Camp
+              </button>
+            )}
           </div>
         </div>
 
         {/* Route / Ward Risk */}
-        <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-              Zone Accessibility
-            </span>
-            <RouteIcon className="w-4 h-4 text-amber-600" />
-          </div>
-          <div className="mt-2 flex items-baseline space-x-2">
-            <span className="text-3xl font-bold text-gray-900 font-mono">
-              {wards.length - blockedWards}
-            </span>
-            <span className="text-xs text-gray-500">
-              / {wards.length} sectors clear
-            </span>
+        <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                Zone Accessibility
+              </span>
+              <RouteIcon className="w-4 h-4 text-amber-600" />
+            </div>
+            <div className="mt-2 flex items-baseline space-x-2">
+              <span className="text-3xl font-bold text-gray-900 font-mono">
+                {wards.length - blockedWards}
+              </span>
+              <span className="text-xs text-gray-500">
+                / {wards.length} sectors clear
+              </span>
+            </div>
           </div>
           <div className="mt-3 flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-100">
             <span className="text-red-600">{blockedWards} blocked</span>
-            <span className="text-amber-600">{floodedWards} flooded</span>
+            {onOpenReportHazardModal && (
+              <button
+                onClick={onOpenReportHazardModal}
+                className="text-[11px] font-semibold text-amber-800 hover:text-amber-950 bg-amber-50 px-2 py-0.5 rounded border border-amber-200"
+              >
+                + Report Hazard
+              </button>
+            )}
           </div>
         </div>
       </div>

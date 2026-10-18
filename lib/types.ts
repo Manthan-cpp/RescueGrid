@@ -8,6 +8,8 @@ export interface CrisisRoom {
   status: CrisisRoomStatus;
 }
 
+export type UserRole = "commander" | "ngo" | "public";
+
 export type PersonRole = "victim" | "volunteer" | "coordinator";
 
 export interface Person {
@@ -34,9 +36,12 @@ export interface SOSRequest {
   assigned_resource_id?: string;
   assigned_resource_name?: string;
   people_count?: number;
+  lat?: number;
+  lng?: number;
+  caller_phone?: string;
 }
 
-export type ResourceType = "boat" | "ambulance" | "food" | "medicine" | "shelter_bed";
+export type ResourceType = "boat" | "ambulance" | "food" | "medicine" | "shelter_bed" | "generator" | "drone";
 export type ResourceStatus = "available" | "assigned" | "maintenance";
 
 export interface Resource {
@@ -49,6 +54,10 @@ export interface Resource {
   agency_id: string;
   agency_name?: string;
   capacity?: number;
+  contact_phone?: string;
+  lat?: number;
+  lng?: number;
+  notes?: string;
 }
 
 export interface Shelter {
@@ -58,6 +67,11 @@ export interface Shelter {
   current_occupancy: number;
   location_id: string;
   location_name?: string;
+  has_medical?: boolean;
+  has_generator?: boolean;
+  contact_phone?: string;
+  lat?: number;
+  lng?: number;
 }
 
 export type RouteStatus = "clear" | "blocked" | "restricted";
@@ -67,6 +81,8 @@ export interface WardLocation {
   name: string;
   region: string;
   accessibility_status: "accessible" | "flooded" | "blocked";
+  lat?: number;
+  lng?: number;
 }
 
 export interface Route {

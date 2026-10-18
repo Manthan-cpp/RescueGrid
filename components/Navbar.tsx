@@ -1,11 +1,13 @@
 "use client";
 
 import React from "react";
-import { ShieldAlert, Plus, Radio, ArrowLeft } from "lucide-react";
-import { CrisisRoom } from "@/lib/types";
+import { ShieldAlert, Plus, Radio, ArrowLeft, Users, Shield } from "lucide-react";
+import { CrisisRoom, UserRole } from "@/lib/types";
 
 interface NavbarProps {
   currentRoom: CrisisRoom | null;
+  userRole?: UserRole;
+  onSelectRole?: (role: UserRole) => void;
   onOpenCreateModal: () => void;
   onBackToRooms?: () => void;
   onOpenNewSOSModal?: () => void;
@@ -13,6 +15,8 @@ interface NavbarProps {
 
 export function Navbar({
   currentRoom,
+  userRole = "commander",
+  onSelectRole,
   onOpenCreateModal,
   onBackToRooms,
   onOpenNewSOSModal,
@@ -64,9 +68,56 @@ export function Navbar({
 
         {/* Actions & Status */}
         <div className="flex items-center space-x-3">
-          <div className="hidden lg:flex items-center text-xs text-gray-500 font-mono space-x-1.5 mr-2">
+          {/* Freedom of Role Switcher */}
+          {onSelectRole && (
+            <div className="flex items-center bg-gray-100 p-0.5 rounded-lg border border-gray-200 text-xs">
+              <button
+                type="button"
+                onClick={() => onSelectRole("commander")}
+                className={`px-2.5 py-1 rounded-md font-medium transition-all flex items-center space-x-1 ${
+                  userRole === "commander"
+                    ? "bg-white text-gray-900 shadow-xs font-semibold"
+                    : "text-gray-500 hover:text-gray-800"
+                }`}
+                title="Incident Commander: Full command control & Dispatch Agent oversight"
+              >
+                <span>⚡</span>
+                <span className="hidden sm:inline">Commander</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onSelectRole("ngo")}
+                className={`px-2.5 py-1 rounded-md font-medium transition-all flex items-center space-x-1 ${
+                  userRole === "ngo"
+                    ? "bg-white text-blue-700 shadow-xs font-semibold"
+                    : "text-gray-500 hover:text-gray-800"
+                }`}
+                title="NGO / Field Volunteer: Register boats, ambulances, supplies & report road status"
+              >
+                <span>🤝</span>
+                <span className="hidden sm:inline">NGO / Field</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onSelectRole("public")}
+                className={`px-2.5 py-1 rounded-md font-medium transition-all flex items-center space-x-1 ${
+                  userRole === "public"
+                    ? "bg-white text-red-700 shadow-xs font-semibold"
+                    : "text-gray-500 hover:text-gray-800"
+                }`}
+                title="Public Citizen: Emergency SOS broadcast & safe shelter lookup"
+              >
+                <span>🆘</span>
+                <span className="hidden sm:inline">Citizen</span>
+              </button>
+            </div>
+          )}
+
+          <div className="hidden xl:flex items-center text-xs text-gray-500 font-mono space-x-1.5 mr-2">
             <Radio className="w-3.5 h-3.5 text-red-500" />
-            <span>FalkorDB ap-south-1</span>
+            <span>FalkorDB</span>
           </div>
 
           {currentRoom && onOpenNewSOSModal && (

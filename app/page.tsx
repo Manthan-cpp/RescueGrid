@@ -21,6 +21,9 @@ import {
 import { Navbar } from "@/components/Navbar";
 import { CreateRoomModal } from "@/components/CreateRoomModal";
 import { NewSOSModal } from "@/components/NewSOSModal";
+import { AddResourceModal } from "@/components/AddResourceModal";
+import { AddShelterModal } from "@/components/AddShelterModal";
+import { ReportHazardModal } from "@/components/ReportHazardModal";
 import { OverviewTab } from "@/components/tabs/OverviewTab";
 import { LiveGraphTab } from "@/components/tabs/LiveGraphTab";
 import { SOSRequestsTab } from "@/components/tabs/SOSRequestsTab";
@@ -31,20 +34,27 @@ import {
   CrisisRoom,
   SOSRequest,
   Resource,
+  ResourceStatus,
   Shelter,
   WardLocation,
   ChatMessage,
   AgentLogEntry,
   GraphData,
+  UserRole,
+  RouteStatus,
 } from "@/lib/types";
 
 export default function Home() {
   // Navigation & Modal State
   const [rooms, setRooms] = useState<CrisisRoom[]>([]);
   const [currentRoom, setCurrentRoom] = useState<CrisisRoom | null>(null);
+  const [userRole, setUserRole] = useState<UserRole>("commander");
   const [activeTab, setActiveTab] = useState<string>("overview");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isSOSModalOpen, setIsSOSModalOpen] = useState(false);
+  const [isAddResourceModalOpen, setIsAddResourceModalOpen] = useState(false);
+  const [isAddShelterModalOpen, setIsAddShelterModalOpen] = useState(false);
+  const [isReportHazardModalOpen, setIsReportHazardModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -227,6 +237,87 @@ export default function Home() {
     }
   };
 
+  // Handle Add Resource
+  const handleAddResource = async (resData: Partial<Resource>) => {
+    if (!currentRoom) return;
+    try {
+      const res = await fetch("/api/resources", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...resData,
+          roomId: currentRoom.id,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        await fetchRoomDetails(currentRoom.id);
+      }
+    } catch (err) {
+      console.error("Error registering resource:", err);
+    }
+  };
+
+  // Handle Update Resource Status
+  const handleUpdateResourceStatus = async (resourceId: string, status: ResourceStatus) => {
+    if (!currentRoom) return;
+    setResources((prev) =>
+      prev.map((r) => (r.id === resourceId ? { ...r, status } : r))
+    );
+    try {
+      await fetch("/api/resources", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resourceId, status }),
+      });
+      await fetchRoomDetails(currentRoom.id);
+    } catch (err) {
+      console.error("Error updating resource status:", err);
+    }
+  };
+
+  // Handle Add Shelter
+  const handleAddShelter = async (shelterData: Partial<Shelter>) => {
+    if (!currentRoom) return;
+    try {
+      const res = await fetch("/api/shelters", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...shelterData,
+          roomId: currentRoom.id,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        await fetchRoomDetails(currentRoom.id);
+      }
+    } catch (err) {
+      console.error("Error adding shelter:", err);
+    }
+  };
+
+  // Handle Report Road Hazard
+  const handleReportHazard = async (hazardData: { from_location_id: string; to_location_id: string; status: RouteStatus; notes?: string }) => {
+    if (!currentRoom) return;
+    try {
+      const res = await fetch("/api/routes/hazard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...hazardData,
+          roomId: currentRoom.id,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        await fetchRoomDetails(currentRoom.id);
+      }
+    } catch (err) {
+      console.error("Error reporting road hazard:", err);
+    }
+  };
+
   // Handle Query Agent in Ask the Brain
   const handleSendBrainMessage = async (queryText: string) => {
     const userMsg: ChatMessage = {
@@ -354,6 +445,8 @@ export default function Home() {
       <div className="min-h-screen bg-[#F7F7F5] flex flex-col">
         <Navbar
           currentRoom={null}
+          userRole={userRole}
+          onSelectRole={(r) => setUserRole(r)}
           onOpenCreateModal={() => setIsCreateModalOpen(true)}
         />
         <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-10">
@@ -478,6 +571,8 @@ export default function Home() {
     <div className="min-h-screen bg-[#F7F7F5] flex flex-col">
       <Navbar
         currentRoom={currentRoom}
+        userRole={userRole}
+        onSelectRole={(r) => setUserRole(r)}
         onOpenCreateModal={() => setIsCreateModalOpen(true)}
         onBackToRooms={() => setCurrentRoom(null)}
         onOpenNewSOSModal={() => setIsSOSModalOpen(true)}
@@ -495,6 +590,9 @@ export default function Home() {
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" />
                 Live FalkorDB Brain
               </span>
+              <span className="text-xs font-mono px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 capitalize">
+                Role: {userRole}
+              </span>
             </div>
             <h1 className="text-xl font-bold text-gray-950 mt-1">
               {currentRoom.name}
@@ -505,7 +603,7 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => fetchRoomDetails(currentRoom.id)}
               disabled={isRefreshing}
@@ -517,18 +615,25 @@ export default function Home() {
             <button
               onClick={handleRunSimulation}
               disabled={isSimulating}
-              className="inline-flex items-center px-3.5 py-2 text-xs font-semibold rounded-md bg-purple-700 text-white hover:bg-purple-800 disabled:opacity-50 transition-colors shadow-sm"
-              title="Inject realistic multi-day crisis incidents to demonstrate autonomous dispatch & graph memory"
+              className="inline-flex items-center px-3 py-2 text-xs font-semibold rounded-md bg-purple-700 text-white hover:bg-purple-800 disabled:opacity-50 transition-colors shadow-sm"
+              title="Inject multi-day crisis incidents to test graph routing & memory"
             >
               <Sparkles className={`w-3.5 h-3.5 mr-1.5 ${isSimulating ? "animate-spin" : ""}`} />
-              {isSimulating ? "Simulating..." : "Run Crisis Simulation"}
+              {isSimulating ? "Simulating..." : "Run Simulation"}
+            </button>
+            <button
+              onClick={() => setIsAddResourceModalOpen(true)}
+              className="inline-flex items-center px-3 py-2 text-xs font-semibold rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              + Resource
             </button>
             <button
               onClick={() => setIsSOSModalOpen(true)}
-              className="inline-flex items-center px-4 py-2 text-xs font-semibold rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors shadow-sm"
+              className="inline-flex items-center px-3.5 py-2 text-xs font-semibold rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors shadow-sm"
             >
-              <Plus className="w-4 h-4 mr-1.5" />
-              Broadcast Emergency SOS
+              <Plus className="w-4 h-4 mr-1" />
+              Broadcast SOS
             </button>
           </div>
         </div>
@@ -576,6 +681,8 @@ export default function Home() {
             agentLogs={agentLogs}
             onNavigateTab={(tab) => setActiveTab(tab)}
             onOpenSOSModal={() => setIsSOSModalOpen(true)}
+            onOpenAddShelterModal={() => setIsAddShelterModalOpen(true)}
+            onOpenReportHazardModal={() => setIsReportHazardModalOpen(true)}
           />
         )}
 
@@ -590,7 +697,13 @@ export default function Home() {
           />
         )}
 
-        {activeTab === "resources" && <ResourcesTab resources={resources} />}
+        {activeTab === "resources" && (
+          <ResourcesTab
+            resources={resources}
+            onOpenAddResourceModal={() => setIsAddResourceModalOpen(true)}
+            onUpdateStatus={handleUpdateResourceStatus}
+          />
+        )}
 
         {activeTab === "brain" && (
           <AskBrainTab
@@ -615,6 +728,27 @@ export default function Home() {
         wards={wards}
         onClose={() => setIsSOSModalOpen(false)}
         onSubmit={handleNewSOS}
+      />
+
+      <AddResourceModal
+        isOpen={isAddResourceModalOpen}
+        wards={wards}
+        onClose={() => setIsAddResourceModalOpen(false)}
+        onSubmit={handleAddResource}
+      />
+
+      <AddShelterModal
+        isOpen={isAddShelterModalOpen}
+        wards={wards}
+        onClose={() => setIsAddShelterModalOpen(false)}
+        onSubmit={handleAddShelter}
+      />
+
+      <ReportHazardModal
+        isOpen={isReportHazardModalOpen}
+        wards={wards}
+        onClose={() => setIsReportHazardModalOpen(false)}
+        onSubmit={handleReportHazard}
       />
     </div>
   );

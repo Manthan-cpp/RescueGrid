@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { X, AlertTriangle, Users, MapPin, FileText } from "lucide-react";
+import { X, AlertTriangle, Users, MapPin, FileText, Phone, Crosshair } from "lucide-react";
 import { SOSRequest, SOSUrgency, WardLocation } from "@/lib/types";
 
 interface NewSOSModalProps {
@@ -22,8 +22,23 @@ export function NewSOSModal({
   const [locationId, setLocationId] = useState(wards[0]?.id || "custom");
   const [customLocation, setCustomLocation] = useState("");
   const [peopleCount, setPeopleCount] = useState(2);
+  const [callerPhone, setCallerPhone] = useState("");
+  const [lat, setLat] = useState("");
+  const [lng, setLng] = useState("");
 
   if (!isOpen) return null;
+
+  const handleGetLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setLat(pos.coords.latitude.toFixed(5));
+          setLng(pos.coords.longitude.toFixed(5));
+        },
+        (err) => console.warn("Geolocation denied:", err.message)
+      );
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,11 +62,17 @@ export function NewSOSModal({
       location_id: finalLocId,
       location_name: finalLocName,
       people_count: Number(peopleCount),
+      caller_phone: callerPhone.trim(),
+      lat: lat ? parseFloat(lat) : undefined,
+      lng: lng ? parseFloat(lng) : undefined,
       status: "open",
     });
 
     setDescription("");
     setCustomLocation("");
+    setCallerPhone("");
+    setLat("");
+    setLng("");
     onClose();
   };
 
@@ -173,6 +194,58 @@ export function NewSOSModal({
                 />
               </div>
             )}
+          </div>
+
+          {/* Caller Phone & GPS Coordinates */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                Caller Callback Phone Number
+              </label>
+              <div className="relative">
+                <Phone className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+                <input
+                  type="tel"
+                  placeholder="+91 98470 54321"
+                  value={callerPhone}
+                  onChange={(e) => setCallerPhone(e.target.value)}
+                  className="w-full text-sm pl-9 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-900 text-gray-900"
+                />
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-gray-700">
+                  Exact GPS (Optional)
+                </label>
+                <button
+                  type="button"
+                  onClick={handleGetLocation}
+                  className="text-[11px] text-red-600 hover:text-red-800 font-semibold"
+                >
+                  Auto-Detect GPS
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <input
+                  type="number"
+                  step="any"
+                  placeholder="Lat (11.60)"
+                  value={lat}
+                  onChange={(e) => setLat(e.target.value)}
+                  className="text-xs px-2 py-1.5 border border-gray-300 rounded text-gray-800"
+                />
+                <input
+                  type="number"
+                  step="any"
+                  placeholder="Lng (76.08)"
+                  value={lng}
+                  onChange={(e) => setLng(e.target.value)}
+                  className="text-xs px-2 py-1.5 border border-gray-300 rounded text-gray-800"
+                />
+              </div>
+            </div>
           </div>
 
           <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
